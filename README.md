@@ -229,7 +229,7 @@ This section will guide you through running our demos with processed data. We pr
 
 ## Download example data
 
-Please download the processed data bags from [this link](https://drive.google.com/drive/folders/125N7srccxXPmn2HAQFjwXNNzYOO7DoqV). This containes compact processed bags for forest and urban outdoor environments. Please use the right data with the right scripts as specified below.
+Please download the processed data bags from [this link](https://drive.google.com/drive/folders/0B5oeNvHFA8WDfjVMa29HSldseF81SUxFMTA4d3F6VlN2YW9hdlZ0RzNMM1V3TGdJZmRMb1E?resourcekey=0-E7OTjCMZq2C58dps4Gibqw&usp=sharing). This containes compact processed bags for forest and urban outdoor environments. Please use the right data with the right scripts as specified below.
 
 
 ## What these demos will do
@@ -272,13 +272,13 @@ This section will guide you through running our code stack with raw sensor data,
 
 ## Download example data
 
-Please download the LiDAR demo bags from [this link](https://drive.google.com/drive/folders/1heAnoe6qESp2uQjjwwdR0Q3sUijkcUER). It is present inside the `outdoor` folder.
+Please download the LiDAR demo bags from [this link](https://drive.google.com/drive/folders/0B5oeNvHFA8WDfjVMa29HSldseF81SUxFMTA4d3F6VlN2YW9hdlZ0RzNMM1V3TGdJZmRMb1E?resourcekey=0-E7OTjCMZq2C58dps4Gibqw&usp=sharing). It is present inside the `outdoor` folder.
 
-Please download the RGBD demo bags from [this link](https://drive.google.com/drive/folders/1heAnoe6qESp2uQjjwwdR0Q3sUijkcUER). It is present inside the `indoor` folder.
+Please download the RGBD demo bags from [this link](https://drive.google.com/drive/folders/0B5oeNvHFA8WDfjVMa29HSldseF81SUxFMTA4d3F6VlN2YW9hdlZ0RzNMM1V3TGdJZmRMb1E?resourcekey=0-E7OTjCMZq2C58dps4Gibqw&usp=sharing). It is present inside the `indoor` folder.
 
-Please download the KITTI benchmark processed bags from [this link](https://drive.google.com/drive/folders/1heAnoe6qESp2uQjjwwdR0Q3sUijkcUER). It is present inside the `kitti_bags` folder.
+Please download the KITTI benchmark processed bags from [this link](https://drive.google.com/drive/folders/0B5oeNvHFA8WDfjVMa29HSldseF81SUxFMTA4d3F6VlN2YW9hdlZ0RzNMM1V3TGdJZmRMb1E?resourcekey=0-E7OTjCMZq2C58dps4Gibqw&usp=sharing). It is present inside the `kitti_bags` folder.
 
-Please download our trained RangeNet++ model from [this link](https://drive.google.com/drive/folders/1ignTNFZe3KLh9Fy6fakPwwJLEEnV-0E0). It is currently named `penn_smallest.zip`. Follow the instructions in the `Run our LiDAR data experiments`  section below on how to use this model.
+Please download our trained RangeNet++ model from [this link](https://drive.google.com/drive/folders/0B5oeNvHFA8WDfjVMa29HSldseF81SUxFMTA4d3F6VlN2YW9hdlZ0RzNMM1V3TGdJZmRMb1E?resourcekey=0-E7OTjCMZq2C58dps4Gibqw&usp=sharing). It is currently named `penn_smallest.zip`. Follow the instructions in the `Run our LiDAR data experiments`  section below on how to use this model.
 
 ## Run our RGBD data experiments
 
