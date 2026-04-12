@@ -1,49 +1,66 @@
-#! /usr/bin/env python3
+#!/usr/bin/env python3
 
-import rospy
+import argparse
+import os
+import sys
+
+import rclpy
+from rclpy.node import Node
+import yaml
+from ament_index_python.packages import get_package_share_directory
+
 from sloam_msgs.msg import SemanticMeasSyncOdom
 from sloam_msgs.msg import StampedRvizMarkerArray, ROSEllipsoid
 from nav_msgs.msg import Odometry
 # message filter
 from message_filters import ApproximateTimeSynchronizer, Subscriber
-# import R
-import argparse
-import yaml
-import rospkg
 
 # This node syncs the measurements from the following topics:
 # centroid/ellipsoids (point landmark) measurements
 # odometry
 
 
-class SyncMeasurementsCentroidOdom:
+class SyncMeasurementsCentroidOdom(Node):
     def __init__(self, args):
+        super().__init__("sync_semantic_node_centroid_odom")
         # "/dragonfly67/quadrotor_ukf/control_odom" "/quadrotor1/lidar_odom"
         self.odom_topic = args["odom_topic"]
-        self.odom_sub = Subscriber(self.odom_topic, Odometry)
+        self.odom_sub = Subscriber(self, Odometry, self.odom_topic)
         self.centroid_sub = Subscriber(
-            "chair_cuboids_stamped", StampedRvizMarkerArray)
-        rospy.loginfo_once(
+            self, StampedRvizMarkerArray, "chair_cuboids_stamped")
+        self.get_logger().info(
             "\033[92mOdom topic: {}\033[0m".format(self.odom_topic))
         # keep a list of the past timestamps that already synced
         self.synced_timestamps = []
         self.num_timestamps_to_keep = 100
-        self.robot_name = "/"+rospy.get_param("/robot_name", default="robot0")
-        self.process_cloud_node_name = "/" + \
-            rospy.get_param("/process_cloud_node_name",
-                            default="process_cloud_node")
-        self.detect_no_seg = rospy.get_param(
-            self.robot_name+self.process_cloud_node_name+"/detect_no_seg", default=False)
-        rospack = rospkg.RosPack()
 
-        if self.detect_no_seg == True:
-            rospy.loginfo_once("Running with open vocabulary object detector")
-            with open(rospack.get_path('scan2shape_launch') + "/config/process_cloud_node_indoor_open_vocab_cls_info.yaml", 'r') as file:
-                self.cls_full_data = yaml.load(file, Loader=yaml.FullLoader)
+        # In ROS2, parameters are local to the node.
+        self.declare_parameter("robot_name", "robot0")
+        self.declare_parameter("process_cloud_node_name", "process_cloud_node")
+        self.declare_parameter("detect_no_seg", False)
+        self.robot_name = self.get_parameter("robot_name").value
+        self.process_cloud_node_name = self.get_parameter(
+            "process_cloud_node_name").value
+        self.detect_no_seg = self.get_parameter("detect_no_seg").value
+
+        try:
+            scan2shape_share = get_package_share_directory("scan2shape_launch")
+        except Exception:
+            scan2shape_share = ""
+
+        if self.detect_no_seg:
+            self.get_logger().info("Running with open vocabulary object detector")
+            cfg = os.path.join(
+                scan2shape_share, "config",
+                "process_cloud_node_indoor_open_vocab_cls_info.yaml")
         else:
-            rospy.loginfo_once("Running with closed vocabulary object detector")
-            with open(rospack.get_path('scan2shape_launch') + "/config/process_cloud_node_indoor_cls_info.yaml", 'r') as file:
-                self.cls_full_data = yaml.load(file, Loader=yaml.FullLoader)
+            self.get_logger().info("Running with closed vocabulary object detector")
+            cfg = os.path.join(
+                scan2shape_share, "config",
+                "process_cloud_node_indoor_cls_info.yaml")
+
+        with open(cfg, "r") as file:
+            self.cls_full_data = yaml.load(file, Loader=yaml.FullLoader)
 
         self.cls = {cls_name: self.cls_full_data[cls_name]["id"]
                     for cls_name in self.cls_full_data.keys()}
@@ -52,11 +69,13 @@ class SyncMeasurementsCentroidOdom:
             [self.centroid_sub, self.odom_sub], queue_size=400, slop=0.01)
         self.sync1.registerCallback(self.sync_callback1)
         # create publishers
-        self.sync_meas_pub = rospy.Publisher(
-            "semantic_meas_sync_odom_raw", SemanticMeasSyncOdom, queue_size=10)
+        self.sync_meas_pub = self.create_publisher(
+            SemanticMeasSyncOdom, "semantic_meas_sync_odom_raw", 10)
 
     def sync_callback1(self, cuboid_msg, odom_msg):
-        rospy.loginfo_throttle(7, "Odom and centroid messages received!")
+        self.get_logger().info(
+            "Odom and centroid messages received!",
+            throttle_duration_sec=7)
         # create a delay for processing
         # create SemanticMeasSyncOdom message
         sync_msg = SemanticMeasSyncOdom()
@@ -78,12 +97,15 @@ class SyncMeasurementsCentroidOdom:
             # ellipsoid_factors.semantic_label is int
             ellipsoid_factor.pose = cuboid.pose
             # set orientation to identity
-            ellipsoid_factor.pose.orientation.x = 0
-            ellipsoid_factor.pose.orientation.y = 0
-            ellipsoid_factor.pose.orientation.z = 0
-            ellipsoid_factor.pose.orientation.w = 1
+            ellipsoid_factor.pose.orientation.x = 0.0
+            ellipsoid_factor.pose.orientation.y = 0.0
+            ellipsoid_factor.pose.orientation.z = 0.0
+            ellipsoid_factor.pose.orientation.w = 1.0
             ellipsoid_factor.scale = [
-                cuboid.scale.x, cuboid.scale.y, cuboid.scale.z]
+                float(cuboid.scale.x),
+                float(cuboid.scale.y),
+                float(cuboid.scale.z),
+            ]
             ellipsoid_factors.append(ellipsoid_factor)
         sync_msg.ellipsoid_factors = ellipsoid_factors
         # publish the message
@@ -93,22 +115,33 @@ class SyncMeasurementsCentroidOdom:
         # put empty cuboid factors
         sync_msg.cuboid_factors = []
         # print in green to indicate that the message is published
-        rospy.loginfo_throttle(
-            3, "\033[92mSynced measurements (centroid only!) published\033[0m")
+        self.get_logger().info(
+            "\033[92mSynced measurements (centroid only!) published\033[0m",
+            throttle_duration_sec=3)
 
 
-if __name__ == "__main__":
-    rospy.init_node("sync_semantic_node_centroid_odom")
+def main(args=None):
+    rclpy.init(args=args)
 
     ap = argparse.ArgumentParser()
-
     # add indoor argument
     ap.add_argument("-o", "--odom_topic", type=str, default="odom",
                     help="odometry topic")
+    argv = sys.argv[1:]
+    if "--ros-args" in argv:
+        argv = argv[:argv.index("--ros-args")]
+    parsed, _ = ap.parse_known_args(argv)
+    parsed_args = vars(parsed)
 
-    args = vars(ap.parse_args(rospy.myargv()[1:]))
-
-    sync_mes = SyncMeasurementsCentroidOdom(args)
-    while not rospy.is_shutdown():
-        rospy.spin()
+    node = SyncMeasurementsCentroidOdom(parsed_args)
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()
     print("Node Killed")
+
+
+if __name__ == "__main__":
+    main()

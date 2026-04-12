@@ -1,44 +1,46 @@
 # This YAML file contains the parameters for the cylinder_plane_modeller.py script
 # which is used to fit cylinders and plane models to tree trunks and ground respectively.
 
-#--------------IMPORTANT PARAMETERS----------------
-# The angle of the cylinder axis ray compared to the ground plane.
-# Cylinders with axis ray angle more than these values are discarded.
-# Used to avoid cylinder fitting to very slanted tree trunks (like fallen trees).
-angle_cutoff: 15
+cylidner_plane_modeller:
+  ros__parameters:
+    #--------------IMPORTANT PARAMETERS----------------
+    # The angle of the cylinder axis ray compared to the ground plane.
+    # Cylinders with axis ray angle more than these values are discarded.
+    # Used to avoid cylinder fitting to very slanted tree trunks (like fallen trees).
+    angle_cutoff: 15.0
 
-# The minimum and maximum radius of the cylinder.
-# Cylinders with radius less than the minimum or more than the maximum have a default radius set for them which is default_radius.
-radius_cutoff: [0.05, 0.5]
+    # The minimum and maximum radius of the cylinder.
+    # Cylinders with radius less than the minimum or more than the maximum have a default radius set for them which is default_radius.
+    radius_cutoff: [0.05, 0.5]
 
-# The minimum number of points required for a point cloud to be considered as a valid cylinder fitting object.
-min_points_per_tree: 15
+    # The minimum number of points required for a point cloud to be considered as a valid cylinder fitting object.
+    min_points_per_tree: 15
 
-# The minimum number of points required in the point cloud ring to calculate the radius of the cylinder.
-min_points_for_radius: 5
+    # The minimum number of points required in the point cloud ring to calculate the radius of the cylinder.
+    min_points_for_radius: 5
 
-# The minimum number of points required to fit a plane model to the ground points.
-min_points_per_ground_patch: 40
+    # The minimum number of points required to fit a plane model to the ground points.
+    min_points_per_ground_patch: 40
 
-# DBSCAN parameters for clustering of the tree point clouds to generate tree instance point clouds.
-clus_eps: 0.5
-clus_min_samples: 10
+    # DBSCAN parameters for clustering of the tree point clouds to generate tree instance point clouds.
+    clus_eps: 0.5
+    clus_min_samples: 10
 
-# Rate at which the cylinder fitting function is run to process the tree point cloud data
-# Rate = 1/run_rate
-# This is done to reduce computational load.
-# If you have a lot of trees then reduce this number to run at a faster rate.
-run_rate: 20
-#---------------------------------------------------
+    # Rate at which the cylinder fitting function is run to process the tree point cloud data
+    # Rate = 1/run_rate
+    # This is done to reduce computational load.
+    # If you have a lot of trees then reduce this number to run at a faster rate.
+    run_rate: 20.0
+    #---------------------------------------------------
 
-# Size of the ground plane patch to display in RViz
-ground_plane_patch_size: 10
+    # Size of the ground plane patch to display in RViz
+    ground_plane_patch_size: 10
 
-# Number of ground plane models to keep in the memory to retrieve the nearest available ground plane model
-num_ground_plane_model_to_keep: 50
+    # Number of ground plane models to keep in the memory to retrieve the nearest available ground plane model
+    num_ground_plane_model_to_keep: 50
 
-# Height above the ground to measure the diameter of the tree trunk. 1.37 is the standard Diameter-at-Breast-Height measurement in forestry research.
-diameter_measure_height_above_ground: 1.3716
+    # Height above the ground to measure the diameter of the tree trunk. 1.37 is the standard Diameter-at-Breast-Height measurement in forestry research.
+    diameter_measure_height_above_ground: 1.3716
 
-# Default radius to set for cylinders with radius less than the minimum or more than the maximum radius.
-default_radius: 0.2
+    # Default radius to set for cylinders with radius less than the minimum or more than the maximum radius.
+    default_radius: 0.2

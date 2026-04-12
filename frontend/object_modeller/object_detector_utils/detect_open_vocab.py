@@ -1,7 +1,9 @@
-#!/usr/bin/env python3.10
+#!/usr/bin/env python3
 
-import rospy
-import rospkg
+import os
+
+import rclpy
+from rclpy.node import Node
 from cv_bridge import CvBridge
 from ultralytics import YOLO
 import message_filters
@@ -9,57 +11,72 @@ import numpy as np
 from std_msgs.msg import Header
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Image, PointCloud2, PointField
-import cv2
 import yaml
-from sloam_msgs.msg import syncPcOdom
-import sys
+from sloam_msgs.msg import SyncPcOdom
+from ament_index_python.packages import get_package_share_directory
 
 bridge = CvBridge()
 
 
-class sem_detection:
+class SemDetection(Node):
     def __init__(self) -> None:
-        # Initialize the ROS node
-        rospy.init_node('sem_detection')
+        super().__init__("sem_detection")
 
-        rospack = rospkg.RosPack()
-
-        
-        self.model_path = rospack.get_path(
-            'object_modeller') + '/models/yolov8x-worldv2.pt'
-        self.cls_config_path = rospack.get_path(
-            'scan2shape_launch') + '/config/process_cloud_node_indoor_open_vocab_cls_info.yaml'
-        with open(self.cls_config_path, 'r') as file:
+        self.model_path = os.path.join(
+            get_package_share_directory("object_modeller"),
+            "models", "yolov8x-worldv2.pt")
+        try:
+            scan2shape_share = get_package_share_directory("scan2shape_launch")
+        except Exception:
+            scan2shape_share = ""
+        self.cls_config_path = os.path.join(
+            scan2shape_share, "config",
+            "process_cloud_node_indoor_open_vocab_cls_info.yaml")
+        with open(self.cls_config_path, "r") as file:
             self.cls_data_all = yaml.load(file, Loader=yaml.FullLoader)
         self.cls_data = {
-            cls_name: self.cls_data_all[cls_name]["id"] for cls_name in self.cls_data_all.keys()}
+            cls_name: self.cls_data_all[cls_name]["id"]
+            for cls_name in self.cls_data_all.keys()
+        }
 
         # Define custom classes
         list_of_queries = [cls_name for cls_name in self.cls_data.keys()]
 
         ##################################### PARAMS / CONFIG #####################################
-        param_name_prefix = rospy.get_name() + '/'
-        self.robot_name = rospy.get_param(param_name_prefix + 'robot_name', 'robot0')
-        self.odom_topic = rospy.get_param(param_name_prefix + 'odom_topic', '/dragonfly67/quadrotor_ukf/control_odom')
-        self.visualize = rospy.get_param(param_name_prefix + 'visualize', False)
-        self.confidence_threshold = rospy.get_param(param_name_prefix + 'confidence_threshold', 0.4)
-        self.sim = rospy.get_param(param_name_prefix + 'sim', False)
-        self.color_fx = rospy.get_param(param_name_prefix + 'color_fx', 386.2926330566406)
-        self.color_fy = rospy.get_param(param_name_prefix + 'color_fy', 386.2926330566406)
-        self.color_cx = rospy.get_param(param_name_prefix + 'color_cx', 324.7949523925781)
-        self.color_cy = rospy.get_param(param_name_prefix + 'color_cy', 242.52862548828125)
-        self.k_depth_scaling_factor = rospy.get_param(param_name_prefix + 'k_depth_scaling_factor', 1000.0)
-        self.desired_rate = rospy.get_param(param_name_prefix + 'desired_rate', 2.0)
+        self.declare_parameter("robot_name", "robot0")
+        self.declare_parameter("odom_topic",
+                               "/dragonfly67/quadrotor_ukf/control_odom")
+        self.declare_parameter("visualize", False)
+        self.declare_parameter("confidence_threshold", 0.4)
+        self.declare_parameter("sim", False)
+        self.declare_parameter("color_fx", 386.2926330566406)
+        self.declare_parameter("color_fy", 386.2926330566406)
+        self.declare_parameter("color_cx", 324.7949523925781)
+        self.declare_parameter("color_cy", 242.52862548828125)
+        self.declare_parameter("k_depth_scaling_factor", 1000.0)
+        self.declare_parameter("desired_rate", 2.0)
+
+        self.robot_name = self.get_parameter("robot_name").value
+        self.odom_topic = self.get_parameter("odom_topic").value
+        self.visualize = self.get_parameter("visualize").value
+        self.confidence_threshold = self.get_parameter(
+            "confidence_threshold").value
+        self.sim = self.get_parameter("sim").value
+        self.color_fx = self.get_parameter("color_fx").value
+        self.color_fy = self.get_parameter("color_fy").value
+        self.color_cx = self.get_parameter("color_cx").value
+        self.color_cy = self.get_parameter("color_cy").value
+        self.k_depth_scaling_factor = self.get_parameter(
+            "k_depth_scaling_factor").value
+        self.desired_rate = self.get_parameter("desired_rate").value
         ##################################### PARAMS / CONFIG #####################################
 
-        self.prev_time = rospy.Time.now()
+        self.prev_time = self.get_clock().now()
 
         self.yolo = YOLO(self.model_path)
         self.yolo.set_classes(list_of_queries)
 
         if self.sim:
-            # Note: Somehow the cv bridge change the raw depth value to meter
-            # So we should not apply depth scale to the depth image again
             self.depth_scale = 1
         else:
             self.depth_scale = 1 / self.k_depth_scaling_factor
@@ -71,35 +88,32 @@ class sem_detection:
         print("cy: ", self.color_cy)
 
         # Subscriber topics names
-        self.rgb_topic = self.robot_name + '/camera/color/image_raw'
-        self.depth_topic = self.robot_name + '/camera/depth/image_rect_raw'
-        self.aligned_depth_topic = self.robot_name + \
-            '/camera/aligned_depth_to_color/image_raw'
+        self.rgb_topic = self.robot_name + "/camera/color/image_raw"
+        self.depth_topic = self.robot_name + "/camera/depth/image_rect_raw"
+        self.aligned_depth_topic = (
+            self.robot_name + "/camera/aligned_depth_to_color/image_raw")
         self.sync_odom_measurements = True
 
         # Publisher topics names
-        self.sync_pc_odom_topic = self.robot_name + '/sem_detection/sync_pc_odom'
-        self.pc_topic = self.robot_name + '/sem_detection/pointcloud'
+        self.sync_pc_odom_topic = (
+            self.robot_name + "/sem_detection/sync_pc_odom")
+        self.pc_topic = self.robot_name + "/sem_detection/pointcloud"
 
         # Subscriber and publisher
-        self.rgb_sub = message_filters.Subscriber(self.rgb_topic, Image)
-
-        # Subscribe to the depth image
-        self.depth_sub = message_filters.Subscriber(self.depth_topic, Image)
+        self.rgb_sub = message_filters.Subscriber(self, Image, self.rgb_topic)
+        self.depth_sub = message_filters.Subscriber(
+            self, Image, self.depth_topic)
         self.aligned_depth_sub = message_filters.Subscriber(
-            self.aligned_depth_topic, Image)
-        self.odom_sub = message_filters.Subscriber(self.odom_topic, Odometry)
+            self, Image, self.aligned_depth_topic)
+        self.odom_sub = message_filters.Subscriber(
+            self, Odometry, self.odom_topic)
 
-        self.pc_pub_ = rospy.Publisher(
-            self.pc_topic, PointCloud2, queue_size=1)
-        self.synced_pc_pub_ = rospy.Publisher(
-            self.sync_pc_odom_topic, syncPcOdom, queue_size=1)
+        self.pc_pub_ = self.create_publisher(PointCloud2, self.pc_topic, 1)
+        self.synced_pc_pub_ = self.create_publisher(
+            SyncPcOdom, self.sync_pc_odom_topic, 1)
 
-        # Synchronize the two image topics with a time delay of 0.1 seconds
-        # ts = message_filters.TimeSynchronizer([self.rgb_sub, self.depth_sub], 10)
         if (self.sync_odom_measurements):
-            rospy.loginfo("Syncing rgb, aligned depth and odom")
-            # ApproximateTimeSynchronizer to allow for 0.01s time difference
+            self.get_logger().info("Syncing rgb, aligned depth and odom")
             ts = message_filters.ApproximateTimeSynchronizer(
                 [self.rgb_sub, self.aligned_depth_sub, self.odom_sub], 10, 0.05)
             ts.registerCallback(self.rgb_aligned_depth_odom_callback)
@@ -110,53 +124,44 @@ class sem_detection:
 
         self.pc_fields_ = self.make_fields()
 
+    def _elapsed_since(self, prev_time):
+        now = self.get_clock().now()
+        return (now - prev_time).nanoseconds * 1e-9
+
     def rgb_aligned_depth_odom_callback(self, rgb, aligned_depth, odom):
-        if (rospy.Time.now() - self.prev_time).to_sec() < 1.0/self.desired_rate:
-            rospy.loginfo_throttle(
-                3, f"Time elapsed since last depth rgb callback is: {(rospy.Time.now() - self.prev_time).to_sec()}")
-            rospy.loginfo_throttle(
-                3, f"Skipping current depth image to get desired rate of {self.desired_rate}")
+        if self._elapsed_since(self.prev_time) < 1.0 / self.desired_rate:
+            self.get_logger().info(
+                f"Time elapsed since last depth rgb callback is: {self._elapsed_since(self.prev_time)}",
+                throttle_duration_sec=3)
+            self.get_logger().info(
+                f"Skipping current depth image to get desired rate of {self.desired_rate}",
+                throttle_duration_sec=3)
             return
         else:
-            self.prev_time = rospy.Time.now()
+            self.prev_time = self.get_clock().now()
 
         try:
-            # Convert ROS image message to OpenCV image
-            # Note: Somehow the cv bridge change the raw depth value to meter
-            # So we should not apply depth scale to the depth image again
             color_img = bridge.imgmsg_to_cv2(rgb, "bgr8")
             depth_img = bridge.imgmsg_to_cv2(
                 aligned_depth, desired_encoding="passthrough")
         except Exception as e:
-            rospy.logerr(e)
+            self.get_logger().error(str(e))
             return
 
-        # 1. detect semantics
-        # Perform instance segmentation using YOLOv8
         detections = self.yolo.predict(
-            color_img,  show=self.visualize, conf=self.confidence_threshold)
+            color_img, show=self.visualize, conf=self.confidence_threshold)
 
-        # 2. open img_size * 2 array save class and id
         label = np.zeros([color_img.shape[0], color_img.shape[1]])
         id = np.zeros([color_img.shape[0], color_img.shape[1]])
         conf = np.zeros([color_img.shape[0], color_img.shape[1]])
 
-        # 3. go though all masks, fill them in class and id
         if len(detections[0]) != 0:
-            # detections is of size 1
-            # detections[0] contains everything
-            # masks is of shape (N obj, H, W)
             for detection in detections:
-                # segmentation
-                # masks, (N, H, W)
-                # bounding coordinates of masks, List[segment] * N
-                # confidence score, (N, 1)
                 num_obj = detection.boxes.shape[0]
                 for i in range(num_obj):
                     cls_int = int(detection.boxes.cls[i])
                     cls_str = self.yolo.names[cls_int]
 
-                    # cur_mask is one for all pixels in the box
                     cur_mask = np.zeros(
                         (color_img.shape[0], color_img.shape[1]))
                     x1, y1, x2, y2 = detection.boxes.xyxy[i]
@@ -165,12 +170,11 @@ class sem_detection:
 
                     mask_pos = np.where(cur_mask != 0)
                     label[mask_pos] = self.get_cls_label(cls_str)
-                    id[mask_pos] = i+1
+                    id[mask_pos] = i + 1
                     conf[mask_pos] = float(detection.boxes.conf[i])
 
-        # Create a grid of pixel coordinates
-        u, v = np.meshgrid(
-            np.arange(depth_img.shape[1]), np.arange(depth_img.shape[0]))
+        u, v = np.meshgrid(np.arange(depth_img.shape[1]),
+                           np.arange(depth_img.shape[0]))
         u = u.astype(np.float32)
         v = v.astype(np.float32)
         d = depth_img.flatten()
@@ -186,7 +190,6 @@ class sem_detection:
         z_pt = z_pt[..., None]
         points = np.concatenate((x_pt, y_pt, z_pt), axis=2)
 
-        # 5. Stack labels, id, conf
         label = label[..., None]
         id = id[..., None]
         conf = conf[..., None]
@@ -195,8 +198,7 @@ class sem_detection:
 
         self.make_fields()
 
-        # 6. publish point cloud
-        sync_pc_odom_msg = syncPcOdom()
+        sync_pc_odom_msg = SyncPcOdom()
         sync_pc_odom_msg.header = Header()
         sync_pc_odom_msg.header.stamp = odom.header.stamp
         sync_pc_odom_msg.header.frame_id = "camera"
@@ -206,75 +208,64 @@ class sem_detection:
         pc_msg.header = header
         pc_msg.header.stamp = odom.header.stamp
         pc_msg.header.frame_id = "camera"
-        rospy.logwarn_throttle(
-            7, 'Hard coding segmented pc frame_id to \'camera\'. Change this if needed.')
-        pc_msg.width = color_img.shape[1]
-        pc_msg.height = color_img.shape[0]
+        self.get_logger().warn(
+            "Hard coding segmented pc frame_id to 'camera'. Change this if needed.",
+            throttle_duration_sec=7)
+        pc_msg.width = int(color_img.shape[1])
+        pc_msg.height = int(color_img.shape[0])
         pc_msg.point_step = 24
         pc_msg.row_step = pc_msg.width * pc_msg.point_step
         pc_msg.fields = self.pc_fields_
         pc_msg.data = pc_data.tobytes()
         sync_pc_odom_msg.cloud = pc_msg
         sync_pc_odom_msg.odom = odom
-        rospy.loginfo_throttle(5, "Published synced point cloud odom message")
+        self.get_logger().info(
+            "Published synced point cloud odom message",
+            throttle_duration_sec=5)
         self.synced_pc_pub_.publish(sync_pc_odom_msg)
         self.pc_pub_.publish(pc_msg)
 
     def rgb_aligned_depth_callback(self, rgb, aligned_depth):
-        if (rospy.Time.now() - self.prev_time).to_sec() < 1.0/self.desired_rate:
-            rospy.loginfo_throttle(
-                3, f"Time elapsed since last depth rgb callback is: {(rospy.Time.now() - self.prev_time).to_sec()}")
-            rospy.loginfo_throttle(
-                3, f"Skipping current depth image to get desired rate of {self.desired_rate}")
+        if self._elapsed_since(self.prev_time) < 1.0 / self.desired_rate:
+            self.get_logger().info(
+                f"Time elapsed since last depth rgb callback is: {self._elapsed_since(self.prev_time)}",
+                throttle_duration_sec=3)
+            self.get_logger().info(
+                f"Skipping current depth image to get desired rate of {self.desired_rate}",
+                throttle_duration_sec=3)
             return
         else:
-            self.prev_time = rospy.Time.now()
+            self.prev_time = self.get_clock().now()
         try:
-            # Convert ROS image message to OpenCV image
             color_img = bridge.imgmsg_to_cv2(rgb, "bgr8")
             depth_img = bridge.imgmsg_to_cv2(
                 aligned_depth, desired_encoding="passthrough")
         except Exception as e:
-            rospy.logerr(e)
+            self.get_logger().error(str(e))
             return
 
-        # 1. detect semantics
-        # Perform instance segmentation using YOLOv8
         detections = self.yolo.predict(
-            color_img,  show=self.visualize, conf=self.confidence_threshold)
+            color_img, show=self.visualize, conf=self.confidence_threshold)
 
-        # 2. open img_size * 2 array save class and id
         label = np.zeros([color_img.shape[0], color_img.shape[1]])
         id = np.zeros([color_img.shape[0], color_img.shape[1]])
         conf = np.zeros([color_img.shape[0], color_img.shape[1]])
 
-        # 3. go though all masks, fill them in class and id
         if len(detections[0]) != 0:
-            # detections is of size 1
-            # detections[0] contains everything
-            # masks is of shape (N obj, H, W)
             for detection in detections:
-                # segmentation
                 num_obj = detection.masks.shape[0]
                 for i in range(num_obj):
                     cls_int = int(detection.boxes.cls[i])
                     cls_str = self.yolo.names[cls_int]
                     cur_mask = detection.masks.masks[i, :, :].cpu().numpy()
 
-                    kernel = np.ones((20, 20), np.uint8)
-                    # cur_mask = cv2.erode(cur_mask,kernel,iterations = 1)
-
                     mask_pos = np.where(cur_mask != 0)
-                    # print(mask_pos, type(mask_pos))
-                    # print(cls_str, type(cls_str))
                     label[mask_pos] = self.get_cls_label(cls_str)
-                    id[mask_pos] = i+1
+                    id[mask_pos] = i + 1
                     conf[mask_pos] = float(detection.boxes.conf[i])
-                    # print(detection.boxes.conf[i], float(detection.boxes.conf[i]))
 
-        # Create a grid of pixel coordinates
-        u, v = np.meshgrid(
-            np.arange(depth_img.shape[1]), np.arange(depth_img.shape[0]))
+        u, v = np.meshgrid(np.arange(depth_img.shape[1]),
+                           np.arange(depth_img.shape[0]))
         u = u.astype(np.float32)
         v = v.astype(np.float32)
         d = depth_img.flatten()
@@ -290,7 +281,6 @@ class sem_detection:
         z_pt = z_pt[..., None]
         points = np.concatenate((x_pt, y_pt, z_pt), axis=2)
 
-        # 5. Stack labels, id, conf
         label = label[..., None]
         id = id[..., None]
         conf = conf[..., None]
@@ -304,10 +294,11 @@ class sem_detection:
         pc_msg.header = header
         pc_msg.header.stamp = aligned_depth.header.stamp
         pc_msg.header.frame_id = "camera"
-        rospy.logwarn_throttle(
-            7, 'Hard coding segmented pc frame_id to \'camera\'. Change this if needed.')
-        pc_msg.width = color_img.shape[1]
-        pc_msg.height = color_img.shape[0]
+        self.get_logger().warn(
+            "Hard coding segmented pc frame_id to 'camera'. Change this if needed.",
+            throttle_duration_sec=7)
+        pc_msg.width = int(color_img.shape[1])
+        pc_msg.height = int(color_img.shape[0])
         pc_msg.point_step = 24
         pc_msg.row_step = pc_msg.width * pc_msg.point_step
         pc_msg.fields = self.pc_fields_
@@ -320,13 +311,7 @@ class sem_detection:
         else:
             return 0  # 4
 
-    def run(self):
-        # Spin the ROS node
-        rospy.loginfo("Object detection node init.")
-        rospy.spin()
-
     def make_fields(self):
-        # manually add fiels by Ian
         fields = []
         field = PointField()
         field.name = 'x'
@@ -372,6 +357,17 @@ class sem_detection:
         return fields
 
 
-if __name__ == '__main__':
-    node = sem_detection()
-    node.run()
+def main(args=None):
+    rclpy.init(args=args)
+    node = SemDetection()
+    node.get_logger().info("Object detection node init.")
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

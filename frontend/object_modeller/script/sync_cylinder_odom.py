@@ -1,30 +1,38 @@
-#! /usr/bin/env python3
+#!/usr/bin/env python3
 
-import rospy
+import argparse
+import sys
+
+import rclpy
+from rclpy.node import Node
 
 from sloam_msgs.msg import SemanticMeasSyncOdom
 from sloam_msgs.msg import ROSCylinderArray
 from nav_msgs.msg import Odometry
 # message filter
 from message_filters import ApproximateTimeSynchronizer, Subscriber
-import argparse
 
 # This node syncs the measurements from the following topics:
 # cylinder measurements
 # odometry
 
 
-class SyncMeasurementsCylinderOdom:
+def _stamp_to_sec(stamp):
+    return stamp.sec + stamp.nanosec * 1e-9
+
+
+class SyncMeasurementsCylinderOdom(Node):
     def __init__(self, args):
+        super().__init__("sync_semantic_node_cylinder_odom")
         # "/dragonfly67/quadrotor_ukf/control_odom" "/quadrotor1/lidar_odom"
         self.odom_topic = args["odom_topic"]
-        self.odom_sub = Subscriber(self.odom_topic, Odometry)
+        self.odom_sub = Subscriber(self, Odometry, self.odom_topic)
         # print in green odom topic
-        rospy.logdebug_once(
+        self.get_logger().debug(
             "\033[92mOdom topic: {}\033[0m".format(self.odom_topic))
 
         self.cylinder_sub = Subscriber(
-            "cylinder_measurements", ROSCylinderArray)
+            self, ROSCylinderArray, "cylinder_measurements")
 
         # keep a list of the past timestamps that already synced
         self.synced_timestamps = []
@@ -36,8 +44,8 @@ class SyncMeasurementsCylinderOdom:
         self.sync2.registerCallback(self.sync_callback2)
 
         # create publishers
-        self.sync_meas_pub = rospy.Publisher(
-            "semantic_meas_sync_odom_raw", SemanticMeasSyncOdom, queue_size=10)
+        self.sync_meas_pub = self.create_publisher(
+            SemanticMeasSyncOdom, "semantic_meas_sync_odom_raw", 10)
 
     def sync_callback2(self, cylinder_msg, odom_msg):
         # create SemanticMeasSyncOdom message
@@ -55,28 +63,41 @@ class SyncMeasurementsCylinderOdom:
         # publish the message
 
         # check if the timestamp is already synced
-        if odom_msg.header.stamp.to_sec() in self.synced_timestamps:
-            rospy.logwarn_throttle(
-                2, "\033[93mWarning: timestamp already synced, skipping this to avoid duplicate measurements\033[0m")
+        odom_time_sec = _stamp_to_sec(odom_msg.header.stamp)
+        if odom_time_sec in self.synced_timestamps:
+            self.get_logger().warn(
+                "\033[93mWarning: timestamp already synced, skipping this to avoid duplicate measurements\033[0m",
+                throttle_duration_sec=2)
         else:
             self.sync_meas_pub.publish(sync_msg)
             # print in green to indicate that the message is published
-            rospy.loginfo_throttle(
-                3, "\033[92mSynced measurements (cylinder only!) published\033[0m")
+            self.get_logger().info(
+                "\033[92mSynced measurements (cylinder only!) published\033[0m",
+                throttle_duration_sec=3)
 
 
-if __name__ == "__main__":
-    rospy.init_node("sync_semantic_node_cylinder_odom")
+def main(args=None):
+    rclpy.init(args=args)
 
     ap = argparse.ArgumentParser()
-
     # add indoor argument
     ap.add_argument("-o", "--odom_topic", type=str, default="odom",
                     help="odometry topic")
+    argv = sys.argv[1:]
+    if "--ros-args" in argv:
+        argv = argv[:argv.index("--ros-args")]
+    parsed, _ = ap.parse_known_args(argv)
+    parsed_args = vars(parsed)
 
-    args = vars(ap.parse_args(rospy.myargv()[1:]))
-
-    sync_mes = SyncMeasurementsCylinderOdom(args)
-    while not rospy.is_shutdown():
-        rospy.spin()
+    node = SyncMeasurementsCylinderOdom(parsed_args)
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()
     print("Node Killed")
+
+
+if __name__ == "__main__":
+    main()
