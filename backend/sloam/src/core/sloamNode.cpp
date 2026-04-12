@@ -48,10 +48,6 @@ SLOAMNode::SLOAMNode(rclcpp::Node *node)
     (void)ret;
   }
 
-  std::string node_name = node_->get_name();
-  std::string idName = node_name + "/hostRobotID";
-
-
   use_slidematch_ = sn_declare_or_get<bool>(node_, "use_slidematch", true);
 
   int num_of_robots = sn_declare_or_get<int>(node_, "number_of_robots", 1);
@@ -63,8 +59,10 @@ SLOAMNode::SLOAMNode(rclcpp::Node *node)
   double place_recognition_attempt_time_offset = sn_declare_or_get<double>(
       node_, "place_recognition_attempt_time_offset", 1.5);
   for (int i = 0; i < num_of_robots; i++) {
+    // Topic name is relative to the node (ROS2 will prefix the node namespace);
+    // it is NOT a parameter name, so slashes are valid here.
     std::string topic_name =
-        node_name + "/robot" + std::to_string(i) + "/trajectory";
+        "robot" + std::to_string(i) + "/trajectory";
     rclcpp::QoS latched_qos(1);
     latched_qos.transient_local();
     pubRobotTrajectory_.push_back(
@@ -72,7 +70,7 @@ SLOAMNode::SLOAMNode(rclcpp::Node *node)
             topic_name, latched_qos));
   }
 
-  hostRobotID = sn_declare_or_get<int>(node_, idName, 0);
+  hostRobotID = sn_declare_or_get<int>(node_, "hostRobotID", 0);
 
 
   // initialize last_intra_loop_closure_stamp_ as current time
@@ -128,7 +126,7 @@ SLOAMNode::SLOAMNode(rclcpp::Node *node)
 
   // Loop Closure
   bool turn_off_intra_loop_closure = sn_declare_or_get<bool>(
-      node_, node_name + "/turn_off_intra_loop_closure", true);
+      node_, "turn_off_intra_loop_closure", true);
   if (turn_off_intra_loop_closure) {
     RCLCPP_WARN(node_->get_logger(), "Intra Loop closure is turned off");
   } else {
@@ -138,7 +136,7 @@ SLOAMNode::SLOAMNode(rclcpp::Node *node)
 
   // Loop Closure
   bool turn_off_inter_loop_closure = sn_declare_or_get<bool>(
-      node_, node_name + "/turn_off_inter_loop_closure", true);
+      node_, "turn_off_inter_loop_closure", true);
   if (turn_off_inter_loop_closure) {
     RCLCPP_WARN(node_->get_logger(), "Inter Loop closure is turned off");
   } else {

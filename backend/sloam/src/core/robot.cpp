@@ -31,9 +31,7 @@ Robot::Robot(rclcpp::Node *node) : node_(node) {
   odom_topic_ = declare_or_get<std::string>(node_, "odom_topic", "odom");
 
   // initialization
-  std::string node_name = node_->get_name();
-  std::string idName = node_name + "/hostRobotID";
-  robotId_ = declare_or_get<int>(node_, idName, 0);
+  robotId_ = declare_or_get<int>(node_, "hostRobotID", 0);
   std::string cur_robot_odom_topic;
   int robot_actual_ID;
   robot_actual_ID = robotId_;

@@ -33,59 +33,61 @@ PlaceRecognition::PlaceRecognition(rclcpp::Node *node) : node_(node) {
 
 // define the ParamInit function
 void PlaceRecognition::ParamInit() {
+  // ROS2 parameter names use dot ('.') for sub-namespacing; slashes are illegal.
+  const std::string pr_ns = ns_prefix_ + ".";
   visualize_matching_results = pr_declare_or_get<bool>(
-      node_, ns_prefix_ + "/visualize_matching_results", false);
+      node_, pr_ns + "visualize_matching_results", false);
   compute_budget_sec_ = pr_declare_or_get<double>(
-      node_, ns_prefix_ + "/compute_budget_sec", 5.0);
+      node_, pr_ns + "compute_budget_sec", 5.0);
   dilation_factor_ =
-      pr_declare_or_get<double>(node_, ns_prefix_ + "/dilation_factor", 1.2);
+      pr_declare_or_get<double>(node_, pr_ns + "dilation_factor", 1.2);
   match_xy_step_size_ = pr_declare_or_get<double>(
-      node_, ns_prefix_ + "/search_xy_step_size", 0.5);
+      node_, pr_ns + "search_xy_step_size", 0.5);
   double match_yaw_half_range_degrees = pr_declare_or_get<double>(
-      node_, ns_prefix_ + "/match_yaw_half_range", 180.0);
+      node_, pr_ns + "match_yaw_half_range", 180.0);
   match_yaw_half_range_ = match_yaw_half_range_degrees * M_PI / 180.;
   disable_yaw_search_ = pr_declare_or_get<bool>(
-      node_, ns_prefix_ + "/disable_yaw_search", false);
+      node_, pr_ns + "disable_yaw_search", false);
   double match_yaw_step_size_degrees = pr_declare_or_get<double>(
-      node_, ns_prefix_ + "/search_yaw_step_size_degrees", 2.0);
+      node_, pr_ns + "search_yaw_step_size_degrees", 2.0);
   match_yaw_angle_step_size_ = match_yaw_step_size_degrees * M_PI / 180.;
   match_threshold_ = pr_declare_or_get<double>(
-      node_, ns_prefix_ + "/match_threshold_position", 0.5);
+      node_, pr_ns + "match_threshold_position", 0.5);
   match_threshold_dimension_ = pr_declare_or_get<double>(
-      node_, ns_prefix_ + "/match_threshold_dimension", 1.0);
+      node_, pr_ns + "match_threshold_dimension", 1.0);
   ignore_dimension_ = pr_declare_or_get<bool>(
-      node_, ns_prefix_ + "/ignore_dimension", false);
+      node_, pr_ns + "ignore_dimension", false);
   min_loop_closure_overlap_percentage_ = pr_declare_or_get<double>(
-      node_, ns_prefix_ + "/min_loop_closure_overlap_percentage", 0.1);
+      node_, pr_ns + "min_loop_closure_overlap_percentage", 0.1);
   // min_num_inliers
   min_num_inliers_ =
-      pr_declare_or_get<int>(node_, ns_prefix_ + "/min_num_inliers", 5);
+      pr_declare_or_get<int>(node_, pr_ns + "min_num_inliers", 5);
   use_lsq = pr_declare_or_get<bool>(
-      node_, ns_prefix_ + "/use_nonlinear_least_squares", true);
+      node_, pr_ns + "use_nonlinear_least_squares", true);
   slidematch_min_num_map_objects_to_start_ = pr_declare_or_get<int>(
-      node_, ns_prefix_ + "/min_num_map_objects_to_start", 1);
+      node_, pr_ns + "min_num_map_objects_to_start", 1);
   match_x_half_range_intra_ = pr_declare_or_get<double>(
-      node_, ns_prefix_ + "/match_x_half_range_intra", 5.0);
+      node_, pr_ns + "match_x_half_range_intra", 5.0);
   match_y_half_range_intra_ = pr_declare_or_get<double>(
-      node_, ns_prefix_ + "/match_y_half_range_intra", 5.0);
+      node_, pr_ns + "match_y_half_range_intra", 5.0);
   double match_yaw_half_range_degrees_intra = pr_declare_or_get<double>(
-      node_, ns_prefix_ + "/match_yaw_half_range_intra", 10.0);
+      node_, pr_ns + "match_yaw_half_range_intra", 10.0);
   match_yaw_half_range_intra_ =
       match_yaw_half_range_degrees_intra * M_PI / 180.;
   match_yaw_half_range_intra_ =
       match_yaw_half_range_degrees_intra * M_PI / 180.;
-  // slidegraph namespace is ns_prefix_ + _slidegraph
-  std::string slidegraph_ns = ns_prefix_ + "_slidegraph";
+  // slidegraph namespace uses dot-based sub-namespacing in ROS2.
+  const std::string slidegraph_ns = ns_prefix_ + "_slidegraph.";
   slidegraph_num_inliners_ = pr_declare_or_get<int>(
-      node_, slidegraph_ns + "/num_inliners_threshold", 10);
+      node_, slidegraph_ns + "num_inliners_threshold", 10);
   slidegraph_matching_threshold_ = pr_declare_or_get<double>(
-      node_, slidegraph_ns + "/descriptor_matching_threshold", 0.1);
+      node_, slidegraph_ns + "descriptor_matching_threshold", 0.1);
   slidegraph_sigma_ =
-      pr_declare_or_get<double>(node_, slidegraph_ns + "/sigma", 0.1);
+      pr_declare_or_get<double>(node_, slidegraph_ns + "sigma", 0.1);
   slidegraph_epsilon_ =
-      pr_declare_or_get<double>(node_, slidegraph_ns + "/epsilon", 0.1);
+      pr_declare_or_get<double>(node_, slidegraph_ns + "epsilon", 0.1);
   slidegraph_min_num_map_objects_to_start_ = pr_declare_or_get<int>(
-      node_, slidegraph_ns + "/min_num_map_objects_to_start", 20);
+      node_, slidegraph_ns + "min_num_map_objects_to_start", 20);
 
   printParams();
 }
@@ -582,7 +584,7 @@ bool PlaceRecognition::findInterLoopClosureWithClipper(
     int min_num_pairs = slidegraph_num_inliners_;
     double matching_threshold = slidegraph_matching_threshold_;
 
-    // print the params in ROS_ERROR_STREAM
+    // print the params in RCLCPP_ERROR_STREAM
     // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: sigma is: " << sigma);
     // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: epsilon is: " << epsilon);
     // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: min_num_pairs is: " << min_num_pairs);

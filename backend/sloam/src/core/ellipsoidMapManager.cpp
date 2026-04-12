@@ -74,7 +74,7 @@ void EllipsoidMapManager::getSubmap(const SE3 &pose,
       idx_count++;
     }
   } else {
-    // ROS_INFO("Not enough landmarks around pose: Total: %ld",
+    // RCLCPP_INFO(logger, "Not enough landmarks around pose: Total: %ld",
     //          pointIdxKNNSearch.size());
   }
 }

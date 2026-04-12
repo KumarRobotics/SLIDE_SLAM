@@ -26,19 +26,13 @@ databaseManager::databaseManager(rclcpp::Node *node) {
   std::chrono::milliseconds period{200};
   timer_ = node_->create_wall_timer(
       period, std::bind(&databaseManager::runCommunication_, this));
-  std::string node_name = node_->get_name();
-  std::string idName = node_name + "/hostRobotID";
-  hostRobotID_ = declare_or_get<int>(node_, idName, 0);
-  std::string priorTFKnownParamName = node_name + "/priorTFKnown";
-  priorTFKnown_ = declare_or_get<bool>(node_, priorTFKnownParamName, false);
+  hostRobotID_ = declare_or_get<int>(node_, "hostRobotID", 0);
+  priorTFKnown_ = declare_or_get<bool>(node_, "priorTFKnown", false);
 
   if (priorTFKnown_) {
-    std::string priorTF_x_ParamName = node_name + "/priorTF_x";
-    double priorTF_x = declare_or_get<double>(node_, priorTF_x_ParamName, 0.0);
-    std::string priorTF_y_ParamName = node_name + "/priorTF_y";
-    double priorTF_y = declare_or_get<double>(node_, priorTF_y_ParamName, 0.0);
-    std::string priorTF_z_ParamName = node_name + "/priorTF_z";
-    double priorTF_z = declare_or_get<double>(node_, priorTF_z_ParamName, 0.0);
+    double priorTF_x = declare_or_get<double>(node_, "priorTF_x", 0.0);
+    double priorTF_y = declare_or_get<double>(node_, "priorTF_y", 0.0);
+    double priorTF_z = declare_or_get<double>(node_, "priorTF_z", 0.0);
 
     int numRobots = declare_or_get<int>(node_, "number_of_robots", 0);
 

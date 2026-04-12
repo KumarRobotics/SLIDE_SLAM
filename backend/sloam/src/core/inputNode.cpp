@@ -130,11 +130,9 @@ InputManager::InputManager() : rclcpp::Node("sloam") {
   odom_frame_id_ =
       in_declare_or_get<std::string>(this, "odom_frame_id", "odom");
   map_frame_id_ = in_declare_or_get<std::string>(this, "map_frame_id", "map");
-  std::string node_name = this->get_name();
-  std::string idName = node_name + "/hostRobotID";
-  hostRobotID_ = in_declare_or_get<int>(this, idName, 0);
+  hostRobotID_ = in_declare_or_get<int>(this, "hostRobotID", 0);
   turn_off_intra_loop_closure_ = in_declare_or_get<bool>(
-      this, node_name + "/turn_off_intra_loop_closure", false);
+      this, "turn_off_intra_loop_closure", false);
 
   sloam_ = std::make_shared<sloam::SLOAMNode>(this);
 

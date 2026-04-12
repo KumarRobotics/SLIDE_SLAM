@@ -251,15 +251,15 @@ bool sloam::RunSloam(SloamInput &in, SloamOutput &out) {
     bool no_cube = false;
     bool no_ellipsoid = false;
     if (cyl_landmarks_world.size() == 0) {
-      // ROS_WARN("No cylinder models found");
+      // RCLCPP_WARN(logger,"No cylinder models found");
       no_cylinder = true;
     }
     if (cube_landmarks_world.size() == 0) {
-      // ROS_WARN("No cube models found");
+      // RCLCPP_WARN(logger,"No cube models found");
       no_cube = true;
     }
     if (ellipsoid_landmarks_world.size() == 0) {
-      // ROS_WARN("No ellipsoid models found");
+      // RCLCPP_WARN(logger,"No ellipsoid models found");
       no_ellipsoid = true;
     }
 
@@ -270,21 +270,21 @@ bool sloam::RunSloam(SloamInput &in, SloamOutput &out) {
                   ellipsoid_landmarks_world);
 
     if (in.submapCylinders.size() == 0 || no_cylinder) {
-      // ROS_WARN(
+      // RCLCPP_WARN(logger,
       //     "Cylinder Submap is empty! OR no cylinder detected in current scan!");
     } else {
       matchModels(cyl_landmarks_world, in.submapCylinders, cylMatchIndices);
     }
 
     if (in.submapCubes.size() == 0 || no_cube) {
-      // ROS_WARN("Cube Submap is empty! OR no cube detected in current scan!");
+      // RCLCPP_WARN(logger,"Cube Submap is empty! OR no cube detected in current scan!");
     } else {
       matchCubeModels(cube_landmarks_world, in.submapCubes, cubeMatchIndices);
       // std::cout << "total submap cubes:" << in.submapCubes.size() << '\n';
     }
 
     if (in.submapEllipsoids.size() == 0 || no_ellipsoid) {
-      // ROS_WARN("Ellipsoid Submap is empty! OR no ellipsoid detected in current "
+      // RCLCPP_WARN(logger,"Ellipsoid Submap is empty! OR no ellipsoid detected in current "
       //          "scan!");
     } else {
       matchEllipsoidModels(ellipsoid_landmarks_world, in.submapEllipsoids,

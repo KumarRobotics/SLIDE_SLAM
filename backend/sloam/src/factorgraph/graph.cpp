@@ -115,7 +115,7 @@ void SemanticFactorGraph::addKeyPoseAndBetween(
   // if (start_timestamp == 0.0) {
   //   mins_elapsed = 0.0;
   // } else {
-  //   mins_elapsed = (ros::Time::now().toSec() - start_timestamp) / 60.0;
+  //   mins_elapsed = (node_->now().seconds() - start_timestamp) / 60.0;
   // }
   // if (noise_model_pose_inflation > 0) {
   //   printf(
@@ -138,7 +138,7 @@ void SemanticFactorGraph::addKeyPoseAndBetween(
   // cur_noise_vec = noise_model_pose->sigmas() *
   //                 (1.0 + noise_model_pose_inflation * mins_elapsed);
 
-  // ROS_INFO_STREAM_THROTTLE(
+  // RCLCPP_INFO_STREAM_THROTTLE(
   //     1,
   //     "Using predefined between-factor covariance instead of "
   //     "VIO estimated covariance (due to its inaccuracy)");
@@ -263,7 +263,7 @@ void SemanticFactorGraph::addRangeBearingFactor(
   // add bearing measurement with a covaraince
   Unit3 bearing_measurement3D = Pose3().bearing(bearing_measurement);
   // IMPORTANT: bearing vector should be expressed in body frame!
-  // ROS_INFO_STREAM_THROTTLE(1,
+  // RCLCPP_INFO_STREAM_THROTTLE(1,
   //                          "bearing vector should be expressed in body
   //                          frame");
 
@@ -342,7 +342,7 @@ void SemanticFactorGraph::addLoopClosureFactor(const Pose3 poseRelative,
 }
 
 void SemanticFactorGraph::solve() {
-  // ROS_INFO_STREAM("START SOLVING THE FACTOR GRAPH OPTIMIZATION PROBLEM");
+  // RCLCPP_INFO_STREAM("START SOLVING THE FACTOR GRAPH OPTIMIZATION PROBLEM");
   isam->update(fgraph, fvalues);
   // Only for active SLAM:
   // isam_loop->update(fgraph_loop, fvalues_loop);
@@ -522,14 +522,14 @@ Symbol SemanticFactorGraph::getSymbol(const int &robotID, const size_t idx) {
 //     }
 //   }
 
-//   // ROS_ERROR_STREAM("landmark marginal cov printing, num of landark is "
+//   // RCLCPP_ERROR_STREAM("landmark marginal cov printing, num of landark is "
 //   //                  << latest_landmark_counter);
 //   for (size_t i = 0; i < latest_landmark_counter; i++) {
 //     // get the covariance matrix of the current pose
 //     if (isam->valueExists(U(i)) && isam_loop->valueExists(U(i))) {
-//       // ROS_ERROR_STREAM("getting landmark cov ");
+//       // RCLCPP_ERROR_STREAM("getting landmark cov ");
 //       gtsam::Matrix cov = isam->marginalCovariance(U(i));
-//       // ROS_ERROR_STREAM("landmark marginal cov: " << cov);
+//       // RCLCPP_ERROR_STREAM("landmark marginal cov: " << cov);
 //       sum_entropy_landmark += cov.trace();
 //       num_valid_landmarks++;
 //     }
@@ -539,7 +539,7 @@ Symbol SemanticFactorGraph::getSymbol(const int &robotID, const size_t idx) {
 //   ios::app); if (entropy_log_file.fail()){
 //     cout << "open file error!\n";
 //   }
-//   ros::Time time_now = ros::Time::now();
+//   rclcpp::Time time_now = node_->now();
 //   // write a header for entropy log file if it is empty, header is TIME,
 //   ENTROPY_POSE, ENTROPY_LANDMARK, NUM_VALID_POSES if
 //   (entropy_log_file.tellp() == 0) {
@@ -569,7 +569,7 @@ Symbol SemanticFactorGraph::getSymbol(const int &robotID, const size_t idx) {
 //   for (size_t i = 0; i < candidateTrajPoseIndices.size(); i++) {
 //     size_t thisPoseIdx = candidateTrajPoseIndices[i];
 //     if (currEstimate.exists(X(thisPoseIdx)) == false) {
-//       ROS_ERROR_STREAM("current pose index is not in the graph, error!");
+//       RCLCPP_ERROR_STREAM("current pose index is not in the graph, error!");
 //       return -1;
 //     }
 //   }
@@ -612,34 +612,34 @@ Symbol SemanticFactorGraph::getSymbol(const int &robotID, const size_t idx) {
 //     sum_entropy_fake_loop_pose += cov_loop.trace();
 //   }
 
-//   // ROS_ERROR_STREAM("landmark marginal cov printing, num of landark is "
+//   // RCLCPP_ERROR_STREAM("landmark marginal cov printing, num of landark is "
 //   //                  << latest_landmark_counter);
 //   for (size_t i = 0; i < latest_landmark_counter; i++) {
 //     // get the covariance matrix of the current pose
 //     if (isam->valueExists(U(i)) && isam_loop->valueExists(U(i))) {
-//       // ROS_ERROR_STREAM("getting landmark cov ");
+//       // RCLCPP_ERROR_STREAM("getting landmark cov ");
 //       gtsam::Matrix cov = isam->marginalCovariance(U(i));
-//       // ROS_ERROR_STREAM("landmark marginal cov: " << cov);
+//       // RCLCPP_ERROR_STREAM("landmark marginal cov: " << cov);
 //       gtsam::Matrix cov_loop = isam_loop->marginalCovariance(U(i));
 //       sum_entropy_landmark += cov.trace();
 //       sum_entropy_fake_loop_landmark += cov_loop.trace();
-//       // ROS_ERROR_STREAM("getting landmark cov ends ");
+//       // RCLCPP_ERROR_STREAM("getting landmark cov ends ");
 //     }
 //   }
-//   // ROS_ERROR_STREAM("landmark marginal cov printing ends");
+//   // RCLCPP_ERROR_STREAM("landmark marginal cov printing ends");
 
 //   double info_gain_pose = sum_entropy_pose - sum_entropy_fake_loop_pose;
 //   double info_gain_landmark =
 //       sum_entropy_landmark - sum_entropy_fake_loop_landmark;
 
-//   ROS_ERROR_STREAM("sum_entropy_pose: " << sum_entropy_pose);
-//   ROS_ERROR_STREAM(
+//   RCLCPP_ERROR_STREAM("sum_entropy_pose: " << sum_entropy_pose);
+//   RCLCPP_ERROR_STREAM(
 //       "sum_entropy_fake_loop_pose: " << sum_entropy_fake_loop_pose);
-//   ROS_ERROR_STREAM("sum_entropy_landmark: " << sum_entropy_landmark);
-//   ROS_ERROR_STREAM(
+//   RCLCPP_ERROR_STREAM("sum_entropy_landmark: " << sum_entropy_landmark);
+//   RCLCPP_ERROR_STREAM(
 //       "sum_entropy_fake_loop_landmark: " << sum_entropy_fake_loop_landmark);
-//   ROS_ERROR_STREAM("info_gain_pose: " << info_gain_pose);
-//   ROS_ERROR_STREAM("info_gain_landmark: " << info_gain_landmark);
+//   RCLCPP_ERROR_STREAM("info_gain_pose: " << info_gain_pose);
+//   RCLCPP_ERROR_STREAM("info_gain_landmark: " << info_gain_landmark);
 
 //   // remove fake loop factor
 //   ISAM2Result result_after_delete =
@@ -668,39 +668,39 @@ Symbol SemanticFactorGraph::getSymbol(const int &robotID, const size_t idx) {
 //       // get the covariance matrix of the current pose
 //       if (isam->valueExists(U(i)) && isam_loop->valueExists(U(i))) {
 //         gtsam::Matrix cov = isam->marginalCovariance(U(i));
-//         // ROS_ERROR_STREAM("landmark marginal cov: " << cov);
+//         // RCLCPP_ERROR_STREAM("landmark marginal cov: " << cov);
 //         gtsam::Matrix cov_loop = isam_loop->marginalCovariance(U(i));
 //         sum_entropy_landmark += cov.trace();
 //         sum_entropy_fake_loop_landmark += cov_loop.trace();
 //       }
 //       // else {
-//       //   ROS_ERROR_STREAM("landmark marginal cov for landmark # "
+//       //   RCLCPP_ERROR_STREAM("landmark marginal cov for landmark # "
 //       //                    << i << "not exist");
 //       // }
 //     }
 //     double info_gain_pose = sum_entropy_pose - sum_entropy_fake_loop_pose;
 //     double info_gain_landmark =
 //         sum_entropy_landmark - sum_entropy_fake_loop_landmark;
-//     ROS_ERROR_STREAM(
+//     RCLCPP_ERROR_STREAM(
 //         "++++++++++++++++++++++++++++++++++++++++SANITY "
 //         "CHECK+++++++++++++++++++++++");
 
-//     // ROS_ERROR_STREAM("sum_entropy_pose: " << sum_entropy_pose);
-//     // ROS_ERROR_STREAM(
+//     // RCLCPP_ERROR_STREAM("sum_entropy_pose: " << sum_entropy_pose);
+//     // RCLCPP_ERROR_STREAM(
 //     //     "sum_entropy_fake_loop_pose: " << sum_entropy_fake_loop_pose);
-//     // ROS_ERROR_STREAM("sum_entropy_landmark: " << sum_entropy_landmark);
-//     // ROS_ERROR_STREAM(
+//     // RCLCPP_ERROR_STREAM("sum_entropy_landmark: " << sum_entropy_landmark);
+//     // RCLCPP_ERROR_STREAM(
 //     //     "sum_entropy_fake_loop_landmark: " <<
 //     //     sum_entropy_fake_loop_landmark);
-//     ROS_ERROR_STREAM(
+//     RCLCPP_ERROR_STREAM(
 //         "info_gain_pose difference (should be 0): " << info_gain_pose);
-//     ROS_ERROR_STREAM(
+//     RCLCPP_ERROR_STREAM(
 //         "info_gain_landmark difference (should be 0): " <<
 //         info_gain_landmark);
 //     bool is_equal = isam->equals(*isam_loop);
-//     ROS_ERROR_STREAM("two factor graphs should be equal, are they? >> "
+//     RCLCPP_ERROR_STREAM("two factor graphs should be equal, are they? >> "
 //                      << is_equal);
-//     ROS_ERROR_STREAM(
+//     RCLCPP_ERROR_STREAM(
 //         "++++++++++++++++++++++++++++++++++++++++SANITY "
 //         "CHECK+++++++++++++++++++++++");
 //   }

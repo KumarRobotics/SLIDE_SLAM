@@ -78,7 +78,7 @@ bool SemanticFactorGraphWrapper::addSLOAMObservation(
   gtsam::Pose3 relativeMotion(relativeMotionSE3.matrix());
 
   pose_counter = pose_counter_robot_[robotID];
-  // ROS_INFO_STREAM("################ ROBOT " << robotID << " pose counter: "
+  // RCLCPP_INFO_STREAM("################ ROBOT " << robotID << " pose counter: "
   //                                           << "################");
 
   if (pose_counter == 0) {
@@ -177,31 +177,31 @@ bool SemanticFactorGraphWrapper::addSLOAMObservation(
   // update the pose counter
   pose_counter++;
   pose_counter_robot_[robotID] = pose_counter;
-  // ROS_INFO_STREAM("pose counter for robotID " << robotID
+  // RCLCPP_INFO_STREAM("pose counter for robotID " << robotID
   //                                             << " is: " << pose_counter);
 
   bool optimize = true;
   // updated logic: always optimize unless opt is set to false
   if (optimize && opt) {
-    // ROS_INFO_STREAM("Running factor graph optimization");
+    // RCLCPP_INFO_STREAM(logger, "Running factor graph optimization");
     size_t num_factors = fgraph.size();
     size_t num_keys = fgraph.keys().size();
-    // ros::Time graph_optimization_start_time = ros::Time::now();
+    // rclcpp::Time graph_optimization_start_time = node_->now();
     solve();
     // -------------------------------
     // ONLY FOR BECHMARKING TIME PERFORMANCE
-    // ros::Time graph_optimization_end_time = ros::Time::now();
+    // rclcpp::Time graph_optimization_end_time = node_->now();
     // double graph_optimization_time = (graph_optimization_end_time -
-    // graph_optimization_start_time).toSec();
+    // graph_optimization_start_time).seconds();
     // fg_optimization_time.push_back(graph_optimization_time);
-    // ROS_INFO_STREAM("graph optimization time is: " <<
-    // (graph_optimization_end_time - graph_optimization_start_time).toSec() <<
+    // RCLCPP_INFO_STREAM(logger, "graph optimization time is: " <<
+    // (graph_optimization_end_time - graph_optimization_start_time).seconds() <<
     // " seconds for a graph with " << num_factors << " factors and " <<
     // num_keys << " keys");
     // -------------------------------
     return true;
   }
-  // ROS_WARN(
+  // RCLCPP_WARN(logger,
   //     "WARNING: addSLOAMObservation: not optimizing! either optimize is false, "
   //     "or "
   //     "opt is set false, may cause problems for single robot case! If "
@@ -318,7 +318,7 @@ void SemanticFactorGraphWrapper::getAllCentroidLandmarks(
     if (landmark_position.x() == gtsam::Point3().x() &&
         landmark_position.y() == gtsam::Point3().y() &&
         landmark_position.z() == gtsam::Point3().z()) {
-      // ROS_INFO_STREAM("fail to fetch landmark idx: " << i);
+      // RCLCPP_INFO_STREAM("fail to fetch landmark idx: " << i);
     } else {
       gtsam::Pose3 landmark_pose =
           gtsam::Pose3(gtsam::Rot3(), landmark_position);
@@ -352,7 +352,7 @@ void SemanticFactorGraphWrapper::getAllCentroidLandmarksAndLabels(
     if (landmark_position.x() == gtsam::Point3().x() &&
         landmark_position.y() == gtsam::Point3().y() &&
         landmark_position.z() == gtsam::Point3().z()) {
-      // ROS_INFO_STREAM("fail to fetch landmark idx: " << i);
+      // RCLCPP_INFO_STREAM("fail to fetch landmark idx: " << i);
     } else {
       gtsam::Pose3 landmark_pose =
           gtsam::Pose3(gtsam::Rot3(), landmark_position);

@@ -4,6 +4,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/io/pcd_io.h>
 #include <plane.h>
+#include <rcutils/logging.h>
 #include <serialization.h>
 #include <sloam.h>
 #include <stdio.h>
@@ -58,9 +59,9 @@ class SLOAMTest : public ::testing::Test {
     readInputData(t1Input, "still", "t1");
     t1Input.poseEstimate = SE3();
 
-    if (ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME,
-                                       ros::console::levels::Debug))
-      ros::console::notifyLoggerLevelsChanged();
+    // ROS2 port: use rcutils_logging API instead of ros::console.
+    rcutils_logging_set_logger_level("sloam_test",
+                                     RCUTILS_LOG_SEVERITY_DEBUG);
   }
 
   void readInputData(SloamInput& inp, std::string prefix, std::string stamp) {

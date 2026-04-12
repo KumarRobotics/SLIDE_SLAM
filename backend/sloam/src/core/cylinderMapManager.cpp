@@ -110,7 +110,7 @@ SE3 CylinderMapManager::getPose(const size_t idx, const int robotID) {
 bool CylinderMapManager::InLoopClosureRegion(
     const double &max_dist_xy, const double &max_dist_z, const SE3 &inputPose,
     const int robotID, const size_t &at_least_num_of_poses_old) {
-  // ROS_INFO_STREAM("Checking whether in loop closure region");
+  // RCLCPP_INFO_STREAM(logger, "Checking whether in loop closure region");
   if (robotPoseCloud_[robotID]->points.size() < at_least_num_of_poses_old) {
     RCLCPP_WARN_THROTTLE(rclcpp::get_logger("CylinderMapManager"),
                          *rclcpp::Clock::make_shared(), 3000,
@@ -150,7 +150,7 @@ bool CylinderMapManager::InLoopClosureRegion(
       }
     }
   }
-  // ROS_INFO_STREAM("No candidate loop closure pose found");
+  // RCLCPP_INFO_STREAM(logger, "No candidate loop closure pose found");
 
   return false;
 }
@@ -170,7 +170,7 @@ bool CylinderMapManager::getLoopCandidateIdx(
   if (kdtree.radiusSearch(searchPoint, max_dist, pointIdxKNNSearch,
                           pointKNNSquaredDistance, 0) > 0) {
     for (const auto nnIdx : pointIdxKNNSearch) {
-      // ROS_DEBUG("Cheking candidates around current pose");
+      // RCLCPP_DEBUG(logger, "Cheking candidates around current pose");
       if (nnIdx != poseIdx && poseIdx - nnIdx > at_least_num_of_poses_old) {
         candidateIdx = nnIdx;
         return true;
@@ -235,7 +235,7 @@ void CylinderMapManager::getSubmap(const SE3 &pose,
       idx_count++;
     }
   } else {
-    // ROS_INFO("Not enough landmarks around pose: Total: %ld",
+    // RCLCPP_INFO(logger, "Not enough landmarks around pose: Total: %ld",
     //          pointIdxKNNSearch.size());
   }
 }

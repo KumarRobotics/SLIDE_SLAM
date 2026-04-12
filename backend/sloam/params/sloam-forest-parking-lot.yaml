@@ -1,55 +1,53 @@
-enable_rviz: true
-sloam:
-  # ------- MOST IMPORTANT PARAMS TO TUNE: -------
-  use_slidematch: true # VERY IMPORANT: place recognition algorithm choice, if true, use slidematch, if false, use slidegraph
-  communication_wait_time: 5.0 # when running multi-robot bags, intermittent communication is replicated by allowing them to share information every communication_wait_time seconds
-  inter_robot_place_recognition_frequency: 0.05 # frequency at which place recognition is run between robots
-  cylinder_match_thresh: 3.0 # cylinder data association threshold
-  min_robot_altitude: -100 # minimum height for adding factors, should be set to negative if you want factors to be added always
-  min_odom_distance: 0.5 # minimum distance between two odometry messages to be considered for processing
-  main_node_rate: 5.0 # rate at which the main node runs, should not be less than the desired keyframe rate (e.g. 1-5 Hz is usually good)
-  place_recognition_attempt_time_offset: 7.0 # (keep default unless you know what you are doing) time offset for place recognition attempts for different robot's nodes to avoid extra compute
-  #-----------------------------------------------
-  intra_robot_place_recognition_frequency: 0.05 # [intra-robot place recog is default turned off] frequency at which place recognition is run within a robot 
-  number_of_robots: 8
-  robot_ns_prefix: /robot # robot_namespace will be robot_prefix + ROBOT_ID (e.g. /quadrotor1, /quadrotor2)
-  debug_mode: true
-  odom_freq_filter: 10  # Add every odom_freq_filter odom messages to the queue. Target same freq. as lidar. odom_freq = raw_odom_freq / odom_freq_filter, if you want to use all odometry messages, set this to 1
-  max_queue_size: 200 # maximum queue size for point clouds buffer (odom buffer will be 10x this)
-  map_frame_id: quadrotor/map
-  odom_frame_id: quadrotor/odom
-  robot_frame_id: body
-
-  # parameters for place recognition
-  place_recognition:
+/**:
+  ros__parameters:
+    enable_rviz: true
     # ------- MOST IMPORTANT PARAMS TO TUNE: -------
-    search_xy_step_size: 0.5 # 0.1 for indoor # default: 0.5 # data association search step size for XY position
-    search_yaw_step_size_degrees: 5.0 # 5.0 for indoor # default 2.0 # data association search step size for yaw angle
-    match_threshold_position: 0.5 # indoor: 0.75 or 1.0 # default 0.5 # threshold for position matching (XY distance)
-    compute_budget_sec: 10.0 # default 5.0 # compute budget in seconds for place recognition algorithm, it will return the best estimate within this time
-    min_num_inliers: 15 # 5 for indoor # default 10 # minimum number of inliers to consider a valid place recognition
-    min_num_map_objects_to_start: 15 # 10 for indoor # 30 for outdoor parking lot # 100 for forests # minimum number of objects in a map to start SlideMatch place recognition attempt
+    use_slidematch: true # VERY IMPORANT: place recognition algorithm choice, if true, use slidematch, if false, use slidegraph
+    communication_wait_time: 5.0 # when running multi-robot bags, intermittent communication is replicated by allowing them to share information every communication_wait_time seconds
+    inter_robot_place_recognition_frequency: 0.05 # frequency at which place recognition is run between robots
+    cylinder_match_thresh: 3.0 # cylinder data association threshold
+    min_robot_altitude: -100.0 # minimum height for adding factors, should be set to negative if you want factors to be added always
+    min_odom_distance: 0.5 # minimum distance between two odometry messages to be considered for processing
+    main_node_rate: 5.0 # rate at which the main node runs, should not be less than the desired keyframe rate (e.g. 1-5 Hz is usually good)
+    place_recognition_attempt_time_offset: 7.0 # (keep default unless you know what you are doing) time offset for place recognition attempts for different robot's nodes to avoid extra compute
     #-----------------------------------------------
-    dilation_factor: 1.2 # place recognition search region along XY will be dilation_factor_ * max(map_1, map_2)
-    match_yaw_half_range: 180.0 # search range for yaw angle (half range, total range is 2 * half range)
-    disable_yaw_search: false # disable yaw search or not
-    match_threshold_dimension: 1.0 # threshold for dimension matching (dimension difference)
-    ignore_dimension: false # ignore the dimension difference in object matching or not
-    #min_loop_closure_overlap_percentage: 0.3 # [replaced by min_num_inliers] number of inliners need to be larger than this percentage * min(# map_1_objects, # map_2_objects)
-    use_nonlinear_least_squares: true # use nonlinear least squares to solve the transformation
-    visualize_matching_results: true # visualize the matching results
+    intra_robot_place_recognition_frequency: 0.05 # [intra-robot place recog is default turned off] frequency at which place recognition is run within a robot
+    number_of_robots: 8
+    robot_ns_prefix: /robot # robot_namespace will be robot_prefix + ROBOT_ID (e.g. /quadrotor1, /quadrotor2)
+    debug_mode: true
+    odom_freq_filter: 10  # Add every odom_freq_filter odom messages to the queue. Target same freq. as lidar. odom_freq = raw_odom_freq / odom_freq_filter, if you want to use all odometry messages, set this to 1
+    max_queue_size: 200 # maximum queue size for point clouds buffer (odom buffer will be 10x this)
+    map_frame_id: quadrotor/map
+    odom_frame_id: quadrotor/odom
+    robot_frame_id: body
+
+    # parameters for place recognition (dot-namespaced for ROS2)
+    # ------- MOST IMPORTANT PARAMS TO TUNE: -------
+    place_recognition.search_xy_step_size: 0.5 # 0.1 for indoor # default: 0.5 # data association search step size for XY position
+    place_recognition.search_yaw_step_size_degrees: 5.0 # 5.0 for indoor # default 2.0 # data association search step size for yaw angle
+    place_recognition.match_threshold_position: 0.5 # indoor: 0.75 or 1.0 # default 0.5 # threshold for position matching (XY distance)
+    place_recognition.compute_budget_sec: 10.0 # default 5.0 # compute budget in seconds for place recognition algorithm, it will return the best estimate within this time
+    place_recognition.min_num_inliers: 15 # 5 for indoor # default 10 # minimum number of inliers to consider a valid place recognition
+    place_recognition.min_num_map_objects_to_start: 15 # 10 for indoor # 30 for outdoor parking lot # 100 for forests # minimum number of objects in a map to start SlideMatch place recognition attempt
+    #-----------------------------------------------
+    place_recognition.dilation_factor: 1.2 # place recognition search region along XY will be dilation_factor_ * max(map_1, map_2)
+    place_recognition.match_yaw_half_range: 180.0 # search range for yaw angle (half range, total range is 2 * half range)
+    place_recognition.disable_yaw_search: false # disable yaw search or not
+    place_recognition.match_threshold_dimension: 1.0 # threshold for dimension matching (dimension difference)
+    place_recognition.ignore_dimension: false # ignore the dimension difference in object matching or not
+    #place_recognition.min_loop_closure_overlap_percentage: 0.3 # [replaced by min_num_inliers] number of inliners need to be larger than this percentage * min(# map_1_objects, # map_2_objects)
+    place_recognition.use_nonlinear_least_squares: true # use nonlinear least squares to solve the transformation
+    place_recognition.visualize_matching_results: true # visualize the matching results
     # only for intra-robot place recognition
-    match_x_half_range_intra: 5.0 # only for intra-robot place recognition
-    match_y_half_range_intra: 5.0 # only for intra-robot place recognition
-    match_yaw_half_range_intra: 10 # only for intra-robot place recognition
+    place_recognition.match_x_half_range_intra: 5.0 # only for intra-robot place recognition
+    place_recognition.match_y_half_range_intra: 5.0 # only for intra-robot place recognition
+    place_recognition.match_yaw_half_range_intra: 10.0 # only for intra-robot place recognition
 
-  # parameters for place recognition (slide graph version)
-  place_recognition_slidegraph:
+    # parameters for place recognition (slide graph version)
     # ------- MOST IMPORTANT PARAMS TO TUNE: -------
-    num_inliners_threshold: 5
-    descriptor_matching_threshold: 0.1
-    min_num_map_objects_to_start: 30 # 30 for outdoor parking lot # 100 for forests # minimum number of objects in a map to start SlideGraph place recognition attempt
+    place_recognition_slidegraph.num_inliners_threshold: 5
+    place_recognition_slidegraph.descriptor_matching_threshold: 0.1
+    place_recognition_slidegraph.min_num_map_objects_to_start: 30 # 30 for outdoor parking lot # 100 for forests # minimum number of objects in a map to start SlideGraph place recognition attempt
     #-----------------------------------------------
-    sigma: 0.1 # CLIPPER params, default 0.01, spread / "variance" of exponential kernel
-    epsilon: 0.3 # CLIPPER params, default 0.06, < bound on consistency score, determines if inlier/outlier, consistency matching threshold
-
+    place_recognition_slidegraph.sigma: 0.1 # CLIPPER params, default 0.01, spread / "variance" of exponential kernel
+    place_recognition_slidegraph.epsilon: 0.3 # CLIPPER params, default 0.06, < bound on consistency score, determines if inlier/outlier, consistency matching threshold

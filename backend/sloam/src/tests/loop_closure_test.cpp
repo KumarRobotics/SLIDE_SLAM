@@ -1,6 +1,7 @@
 #include <cylinder.h>
 #include <definitions.h>
 #include <plane.h>
+#include <rcutils/logging.h>
 #include <serialization.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,9 +46,9 @@ class LoopClosureTest : public ::testing::Test {
     // read class state from archive
     ia >> landmarks;
 
-    if (ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME,
-                                       ros::console::levels::Debug))
-      ros::console::notifyLoggerLevelsChanged();
+    // ROS2 port: use rcutils_logging API instead of ros::console.
+    rcutils_logging_set_logger_level("loop_closure_test",
+                                     RCUTILS_LOG_SEVERITY_DEBUG);
   }
 
   void setupParams() {
