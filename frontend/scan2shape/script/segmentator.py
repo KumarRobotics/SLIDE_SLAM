@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 # This file is a modified version of the original code from: https://github.com/PRBonn/lidar-bonnetal
 
-import imp
+import importlib.util
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from CRF import CRF
-import rospkg
+from ament_index_python.packages import get_package_share_directory
+
+
+def _load_source(module_name, file_path):
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class Segmentator(nn.Module):
@@ -18,12 +26,18 @@ class Segmentator(nn.Module):
         self.path_append = path_append
         self.strict = False
 
-        # TODO(ankit): In final version, make sure this points to the correct path
-        backbone_decoder_path = rospkg.RosPack().get_path(
-            'scan2shape_launch') + "/script/"
+        # In ROS2 the package's installed Python files live under
+        # share/<pkg>/.../scripts and lib/<pkg>/. The backbone/decoder support
+        # modules are installed under lib/<pkg>/backbone and lib/<pkg>/decoder
+        # by this package's CMakeLists.txt — but ament_index returns the share
+        # directory. We resolve the install prefix from there.
+        share_dir = get_package_share_directory('scan2shape_launch')
+        install_prefix = os.path.dirname(os.path.dirname(share_dir))
+        backbone_decoder_path = os.path.join(
+            install_prefix, "lib", "scan2shape_launch") + os.sep
 
         # get the model
-        bboneModule = imp.load_source(
+        bboneModule = _load_source(
             "bboneModule", backbone_decoder_path + "backbone/"+self.ARCH["backbone"]["name"]+".py")
         self.backbone = bboneModule.Backbone(params=self.ARCH["backbone"])
 
@@ -38,7 +52,7 @@ class Segmentator(nn.Module):
             self.backbone.cuda()
         _, stub_skips = self.backbone(stub)
 
-        decoderModule = imp.load_source(
+        decoderModule = _load_source(
             "decoderModule", backbone_decoder_path + "decoder/"+self.ARCH["backbone"]["name"]+".py")
         self.decoder = decoderModule.Decoder(params=self.ARCH["decoder"],
                                              stub_skips=stub_skips,

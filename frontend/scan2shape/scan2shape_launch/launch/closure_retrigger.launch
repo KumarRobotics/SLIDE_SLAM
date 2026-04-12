@@ -1,4 +1,0 @@
-<launch>
-    <node pkg="scan2shape_launch" type="pub_loop_closure_retrigger.py" name="closure_retrigger" output="screen" launch-prefix="taskset -c 0">
-    </node>
-</launch>

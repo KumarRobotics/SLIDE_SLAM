@@ -2,7 +2,6 @@
 
 import numpy as np
 from visualization_msgs.msg import MarkerArray, Marker
-import rospy
 from assignment import hungarian_assignment
 from object_tracker import ObjectTrack
 
@@ -255,7 +254,7 @@ def publish_markers(process_cloud_node, all_tracks, cur_cls_name=None, height=1.
             largest_age = track.age
         marker = Marker()
         marker.header.frame_id = "quadrotor/map"
-        marker.header.stamp = rospy.Time.now()
+        marker.header.stamp = process_cloud_node.get_clock().now().to_msg()
         if cur_cls_name is None:
             marker.ns = "track_centers"
         else:

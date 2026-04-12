@@ -1,24 +1,26 @@
 # Description: Parameters for the infer_node.py file
 #-------------------------------------------------
 # namespace: namespace used by the segmented point cloud publisher to publish under
-
+#
 # model_dir: path to the directory containing the trained RangeNet++ model. The path should end with a '/'
 # Also make sure that all model files do not have a .zip extension. If they do, then edit the file names and just remove the .zip extension.
-
-# desired_frequency: frequency at which inference should be performed by the infer_node.py file. 
+#
+# desired_frequency: frequency at which inference should be performed by the infer_node.py file.
 # This can be used to skip inferences on some point clouds to speed up operations especially when running on a CPU.
-
+#
 # num_cpu_threads: number of CPU threads to be used by PyTorch to perform CPU inference.
-
-# pc_range_threshold: threshold for the range of the point cloud in meters. If the range of the points in the point cloud is greater than this threshold, 
+#
+# pc_range_threshold: threshold for the range of the point cloud in meters. If the range of the points in the point cloud is greater than this threshold,
 # those points are considered to be out of range and the out_of_range_default_position parameter is used as the position of those points.
-
+#
 # pc_point_step: length of a point in bytes in the point cloud.
 #-------------------------------------------------
-namespace: /os_node
-model_dir: /opt/bags/vems-slam-bags/penn_smallest/
-desired_frequency: 2
-num_cpu_threads: 10
-pc_range_threshold: 40
-pc_point_step: 16
-out_of_range_default_position: [0, 0, 0]
+/**:
+  ros__parameters:
+    namespace: /os_node
+    model_dir: /opt/bags/vems-slam-bags/penn_smallest/
+    desired_frequency: 2
+    num_cpu_threads: 10
+    pc_range_threshold: 40
+    pc_point_step: 16
+    out_of_range_default_position: [0.0, 0.0, 0.0]

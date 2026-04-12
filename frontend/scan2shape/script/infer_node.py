@@ -3,47 +3,58 @@
 
 from load_model import Load_Model
 from laserscan import LaserScan
-import rospy
+import rclpy
+from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2, PointField
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 
+# ros_numpy is not available in ROS2 Jazzy. Use sensor_msgs_py.point_cloud2
+# helpers to read PointCloud2 messages instead.
+from sensor_msgs_py import point_cloud2 as pc2_py
 
-import ros_numpy
 
-
-class Inference:
-    def __init__(self, node_name):
-        self.node_name = node_name
+class Inference(Node):
+    def __init__(self):
+        super().__init__("inference_node")
+        self.node_name = self.get_name()
         ################################ IMPORTANT PARAMS ################################
-        self.desired_frequency = rospy.get_param(
-            "/"+self.node_name+"/desired_frequency", default=2)  # 0 means no limit
-        num_cpu_threads = rospy.get_param(
-            "/"+self.node_name+"/num_cpu_threads", default=10)
-        self.range_threshold = rospy.get_param(
-            "/"+self.node_name+"/pc_range_threshold", default=20)  # meters
-        self.out_of_range_pts_default_position = np.array(rospy.get_param(
-            "/"+self.node_name+"/out_of_range_default_position", default=[0, 0, 0]))
-        self.pc_point_step = rospy.get_param("/"+self.node_name+"/pc_point_step", default=16)
+        self.declare_parameter("desired_frequency", 2)
+        self.declare_parameter("num_cpu_threads", 10)
+        self.declare_parameter("pc_range_threshold", 20)
+        self.declare_parameter("out_of_range_default_position", [0.0, 0.0, 0.0])
+        self.declare_parameter("pc_point_step", 16)
+        self.declare_parameter(
+            "model_dir",
+            "/home/sam/semantic-segmentation/lidar-bonnetal/pennovation-darknet-smallest/")
+        self.declare_parameter("namespace", "/os_node")
+        self.declare_parameter("gpu", True)
+
+        self.desired_frequency = self.get_parameter("desired_frequency").value
+        num_cpu_threads = self.get_parameter("num_cpu_threads").value
+        self.range_threshold = self.get_parameter("pc_range_threshold").value
+        self.out_of_range_pts_default_position = np.array(
+            self.get_parameter("out_of_range_default_position").value)
+        self.pc_point_step = self.get_parameter("pc_point_step").value
 
         torch.set_num_threads(num_cpu_threads)
 
-        model_directory = rospy.get_param(
-            "/"+self.node_name+"/model_dir", default="/home/sam/semantic-segmentation/lidar-bonnetal/pennovation-darknet-smallest/")
-        namespace = rospy.get_param(
-            "/"+self.node_name+"/namespace", default="/os_node")
-        print(f"++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
-        print(f"[infer_node] desired frequency for inference is: ", self.desired_frequency,
+        model_directory = self.get_parameter("model_dir").value
+        namespace = self.get_parameter("namespace").value
+        print("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
+        print("[infer_node] desired frequency for inference is: ", self.desired_frequency,
               " Hz. If its a positive value, some point clouds will be skipped for inference. Set to 0 to run inference on every point cloud.")
-        print(f"[infer_node] using namespace: ", namespace,
+        print("[infer_node] using namespace: ", namespace,
               " to publish segmented point cloud (should be /quadrotor if running on the robot, otherwise /os_node)")
-        print(f"[infer_node] setting number of CPU threads to: ", num_cpu_threads,
+        print("[infer_node] setting number of CPU threads to: ", num_cpu_threads,
               " for Pytorch CPU inference (should be small if you are running on the robot)")
-        print(f"[infer_node] setting range threshold for final segmented point cloud (for cutting off all far-away points) to: ", self.range_threshold,
-              " meters. Those cut-off points will be set to have coordinate: ", self.out_of_range_pts_default_position)
-        print(f"[infer_node] model directory is: ", model_directory)
-        print(f"++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
+        print("[infer_node] setting range threshold for final segmented point cloud (for cutting off all far-away points) to: ",
+              self.range_threshold,
+              " meters. Those cut-off points will be set to have coordinate: ",
+              self.out_of_range_pts_default_position)
+        print("[infer_node] model directory is: ", model_directory)
+        print("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
         ################################ IMPORTANT PARAMS ENDS ################################
 
         self.last_called_stamp = None
@@ -60,7 +71,7 @@ class Inference:
         # Set model cuda parameters
         self.gpu_ = False
         if torch.cuda.is_available() and torch.cuda.device_count() > 0 and \
-                rospy.get_param("gpu", default=True):
+                self.get_parameter("gpu").value:
             cudnn.benchmark = True
             cudnn.fastest = True
             self.gpu_ = True
@@ -77,13 +88,13 @@ class Inference:
         self.pc_fields_ = self.make_fields()
 
         # Subscriber for using point cloud from Faster-LIO
-        self.scan_sub_ = rospy.Subscriber(
-            "/cloud_registered_body", PointCloud2, callback=self.pc_cb, queue_size=1)
+        self.scan_sub_ = self.create_subscription(
+            PointCloud2, "/cloud_registered_body", self.pc_cb, 1)
         # Publisher for publishing segmented point cloud
-        self.pc_pub_ = rospy.Publisher(
-            namespace+"/segmented_point_cloud_no_destagger", PointCloud2, queue_size=1)
+        self.pc_pub_ = self.create_publisher(
+            PointCloud2, namespace + "/segmented_point_cloud_no_destagger", 1)
         # Publisher for active SLAM to publish car probability. Currently not used
-        # self.prob_pub = rospy.Publisher(namespace + "/os_node/segmented_point_cloud_no_destagger/car_prob", PointCloud2, queue_size=1)
+        # self.prob_pub = self.create_publisher(PointCloud2, namespace + "/os_node/segmented_point_cloud_no_destagger/car_prob", 1)
 
     def make_fields(self):
         fields = []
@@ -116,45 +127,52 @@ class Inference:
         fields.append(field)
         return fields
 
+    @staticmethod
+    def _stamp_to_sec(stamp):
+        return stamp.sec + stamp.nanosec * 1e-9
+
     def pc_cb(self, msg):
         if self.last_called_stamp is not None:
             if self.desired_frequency > 0:
-                if (msg.header.stamp.to_sec() - self.last_called_stamp.to_sec()) > (1.0 / self.desired_frequency):
+                if (self._stamp_to_sec(msg.header.stamp) - self._stamp_to_sec(self.last_called_stamp)) > (1.0 / self.desired_frequency):
                     self.last_called_stamp = msg.header.stamp
                 else:
-                    rospy.logwarn_throttle(
-                        10, "Skipping this point cloud for inference as desired frequency is {} Hz. Set desired frequency to 0 to run inference on every point cloud.".format(self.desired_frequency))
+                    self.get_logger().warn(
+                        "Skipping this point cloud for inference as desired frequency is {} Hz. Set desired frequency to 0 to run inference on every point cloud.".format(self.desired_frequency),
+                        throttle_duration_sec=10)
                     return
             else:
-                rospy.logwarn_throttle(
-                    10, "Desired frequency is set to 0. Running inference on every point cloud. Set desired frequency to a positive value to limit the inference rate.")
+                self.get_logger().warn(
+                    "Desired frequency is set to 0. Running inference on every point cloud. Set desired frequency to a positive value to limit the inference rate.",
+                    throttle_duration_sec=10)
         else:
             self.last_called_stamp = msg.header.stamp
 
         # store the header in case it get updated before the inference finishes
         header = msg.header
 
-        # If destaggering is needed
-        # ----------------------------------------------------------
-        # scan_data = np.frombuffer(msg.data, dtype=np.float32).reshape(
-        #     self.info_.height, self.info_.width, 4).copy()
-        # destagger
-        # for row, shift in enumerate(self.info_.D):
-        #     scan_data[row, :, :] = np.roll(
-        #         scan_data[row, :, :], int(shift), axis=0)
-        # points_xyz = np.nan_to_num(scan_data[:, :, :3], nan=0.0).reshape(-1, 3)
-        # points_intensity = np.frombuffer(scan_data[:, :, 3].tobytes(), dtype=np.uint16).reshape(
-        #     points_xyz.shape[0], -1)[:, 1].astype(np.float32)
-        # ----------------------------------------------------------
+        # Read points from the PointCloud2 with sensor_msgs_py helpers.
+        pts = list(pc2_py.read_points(
+            msg, field_names=("x", "y", "z", "intensity"), skip_nans=False))
+        if len(pts) == 0:
+            return
+        pts_arr = np.array(pts, dtype=np.float32)
+        # pts_arr is a structured ndarray when read_points returns named fields;
+        # convert to a plain (N, 4) float array.
+        if pts_arr.dtype.names is not None:
+            xs = pts_arr['x'].astype(np.float32)
+            ys = pts_arr['y'].astype(np.float32)
+            zs = pts_arr['z'].astype(np.float32)
+            intens = pts_arr['intensity'].astype(np.float32)
+            pts_arr = np.stack([xs, ys, zs, intens], axis=1)
 
-        undistorted_pc = ros_numpy.numpify(msg)
-        self.pc_width = undistorted_pc['x'].flatten().shape[0]
+        self.pc_width = pts_arr.shape[0]
         self.pc_height = 1
-        points_xyz = np.zeros((undistorted_pc['x'].flatten().shape[0], 3))
-        points_xyz[:, 0] = undistorted_pc['x'].flatten()
-        points_xyz[:, 1] = undistorted_pc['y'].flatten()
-        points_xyz[:, 2] = undistorted_pc['z'].flatten()
-        points_intensity = (undistorted_pc['intensity']).flatten()
+        points_xyz = np.zeros((pts_arr.shape[0], 3))
+        points_xyz[:, 0] = pts_arr[:, 0]
+        points_xyz[:, 1] = pts_arr[:, 1]
+        points_xyz[:, 2] = pts_arr[:, 2]
+        points_intensity = pts_arr[:, 3]
 
         # Load into the LaserScan class to do inference
         self.scan_obj_.open_scan(points_xyz=points_xyz.copy(),
@@ -230,29 +248,6 @@ class Inference:
             points_xyz[np.linalg.norm(
                 points_xyz, axis=1) > self.range_threshold, :] = self.out_of_range_pts_default_position
 
-            # Only used for Active SLAM for calculating car class probability
-            # --------------------------------------------------------------------------------------------
-            # proj_car_prob = proj_output[0][5,:,:]
-            # unproj_argmax_car_prob = proj_car_prob[p_y, p_x]
-            # pred_np_car_prob = unproj_argmax_car_prob.cpu().numpy()
-            # pred_np_car_prob = pred_np_car_prob.reshape((-1))
-            # # threshold out of range points
-            # pred_np_car_prob[np.linalg.norm(points_xyz, axis = 1) > self.range_threshold] = 0
-
-            # pc_msg = PointCloud2()
-            # pc_msg.header = header
-            # pc_msg.width = self.pc_width
-            # pc_msg.height = self.pc_height
-            # pc_msg.point_step = 16
-            # pc_msg.row_step = pc_msg.width * pc_msg.point_step
-            # pc_msg.fields = self.pc_fields_
-
-            # full_data = np.hstack(
-            # (points_xyz, pred_np_car_prob[:, None])).astype(np.float32)
-            # pc_msg.data = full_data.tobytes()
-            # self.prob_pub.publish(pc_msg)
-            # --------------------------------------------------------------------------------------------
-
             pred_np_range_image = proj_argmax.cpu().numpy()
             pred_np_range_image = pred_np_range_image.reshape((-1))
             proj_xyz_range_image = proj_xyz.cpu().numpy()
@@ -262,17 +257,16 @@ class Inference:
                 proj_xyz_range_image, axis=1) > self.range_threshold] = 0
             # make sure that points do not exist in the originial input PC are labeled as 0
             pred_np_range_image[proj_xyz_range_image[:, 0] == -1] = 0
-            # print(f"number of points that do not have data: ", np.sum(proj_xyz_range_image[:,0] == -1))
-            # print(f"number of points that DO have data: ", np.sum(proj_xyz_range_image[:,0] != -1))
-            proj_xyz_range_image[proj_xyz_range_image[:, 0] == -1] = np.NaN
+            proj_xyz_range_image[proj_xyz_range_image[:, 0] == -1] = np.nan
             full_data_range_image = np.hstack(
                 (proj_xyz_range_image, pred_np_range_image[:, None])).astype(np.float32)
 
             pc_msg = PointCloud2()
             pc_msg.header = header
             pc_msg.header.frame_id = "body"
-            rospy.logwarn_throttle(
-                30, "Segmented point cloud is currently hardcoded to be published in \"body\" frame. Please change it to the correct frame if needed.")
+            self.get_logger().warn(
+                "Segmented point cloud is currently hardcoded to be published in \"body\" frame. Please change it to the correct frame if needed.",
+                throttle_duration_sec=30)
             pc_msg.width = self.pc_width
             pc_msg.height = self.pc_height
             pc_msg.point_step = self.pc_point_step
@@ -281,39 +275,22 @@ class Inference:
             pc_msg.data = full_data_range_image.tobytes()
             self.pc_pub_.publish(pc_msg)
 
-            # Original code for publishing segmented point cloud where point cloud is already organized
-            # --------------------------------------------------------------------------------------------
-            # unproj_argmax = proj_argmax[p_y, p_x]
-            # pred_np = unproj_argmax.cpu().numpy()
-            # pred_np = pred_np.reshape((-1))
-            # # threshold out of range points
-            # pred_np[np.linalg.norm(points_xyz, axis = 1) > self.range_threshold] = 0
-            # pc_msg = PointCloud2()
-            # pc_msg.header = header
-            # pc_msg.header.frame_id = "body"
-            # print('hard coding seg pc frame_id to body')
-            # pc_msg.width = self.pc_width
-            # pc_msg.height = self.pc_height
-            # pc_msg.point_step = 16
-            # pc_msg.row_step = pc_msg.width * pc_msg.point_step
-            # pc_msg.fields = self.pc_fields_
+            self.get_logger().info(
+                "Inference done. Segmented point cloud published.",
+                throttle_duration_sec=5)
 
-            # full_data = np.hstack(
-            #     (points_xyz, pred_np[:, None])).astype(np.float32)
-            # pc_msg.data = full_data.tobytes()
-            # self.pc_pub_.publish(pc_msg)
-            # --------------------------------------------------------------------------------------------
 
-            rospy.loginfo_throttle(
-                5, "Inference done. Segmented point cloud published.")
+def main(args=None):
+    rclpy.init(args=args)
+    node = Inference()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    node.get_logger().info("Shutting down {}...".format(node.get_name()))
+    node.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == '__main__':
-
-    node_name = rospy.get_param("/infer_node_name", default="inference_node")
-    rospy.init_node(node_name)
-    inf = Inference(node_name)
-
-    while not rospy.is_shutdown():
-        rospy.spin()
-    rospy.loginfo("Shutting down {}...".format(node_name))
+    main()

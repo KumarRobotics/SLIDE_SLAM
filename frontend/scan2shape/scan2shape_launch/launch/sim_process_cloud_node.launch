@@ -1,7 +1,0 @@
-<launch>
-  <arg name="odom_topic" default="/ddk/ground_truth/odom"/>
-    <node pkg="scan2shape_launch" type="process_cloud_node.py" name="process_cloud_node" output="screen" launch-prefix="taskset -c 0">
-        <remap from="/dragonfly67/quadrotor_ukf/control_odom" to="$(arg odom_topic)"/>
-        <rosparam command="load" file="$(find scan2shape_launch)/config/process_cloud_node_sim.yaml"/>
-    </node>
-</launch>

@@ -1,36 +1,36 @@
-# Description: Parameters for the process_cloud_node_indoor.py file
+# Description: Parameters for the process_cloud_node.py file (indoor RGB-D)
+/**:
+  ros__parameters:
+    #------------------Important Parameters START------------------
+    # Object detection confidence threshold
+    confidence_threshold: 0.6
+    # threshold for segmented lidar points range in meters
+    valid_range_threshold: 40.0
+    # expected segmentation frequency in Hz
+    expected_segmentation_frequency: 2.0
+    # Minimum time in seconds to track a object for before model fitting
+    time_to_initialize_cuboid: 0.75
+    # Lower and upper percentile of depth values to consider for object detection
+    depth_percentile_lower: 35
+    depth_percentile_upper: 45
+    # input point cloud parameters
+    pc_width: 1024
+    pc_height: 64
+    pc_point_step: 16
+    #------------------Important Parameters END------------------
 
-#------------------Important Parameters START------------------
-# Object detection confidence threshold
-confidence_threshold: 0.6
-# threshold for segmented lidar points range in meters
-valid_range_threshold: 40.0
-# expected segmentation frequency in Hz
-expected_segmentation_frequency: 2.0
-# Minimum time in seconds to track a object for before model fitting
-time_to_initialize_cuboid: 0.75
-# Lower and upper percentile of depth values to consider for object detection
-# When using the open-vocab object detector, use more conservative values to avoid faulty depth since the model cannot do instance segmentation
-depth_percentile_lower: 35 
-depth_percentile_upper: 45 # open-vocab: 45
-# input point cloud parameters
-pc_width: 1024
-pc_heigh: 64
-pc_point_step: 16
-#------------------Important Parameters END------------------
-
-# Rate at which object models are published
-desired_acc_obj_pub_rate: 1.0
-# use simulator or run on real robot data. SHOULD ALWAYS BE FALSE for running on real robot data
-use_sim: False
-# Cuboid dim threshold used to start initial object tracking process
-fit_cuboid_dim_thresh: 0.2
-# Resolution to perform voxel downsampling for accumulated instance point cloud. -1 means no downsample
-downsample_res: -1
-# only keep the most recent num_points_limit_per_instance for any segmented point cloud instance while tracking it
-num_instance_point_lim: 10000
-# time to delete a track if it is not updated for a long time
-time_to_delete_lost_track_cuboid: 30
-# save figures of object clustering results from DBSCAN
-visualize_DBSCAN_results: False
-output_dir_to_save_figs: "./"
+    # Rate at which object models are published
+    desired_acc_obj_pub_rate: 1.0
+    # use simulator or run on real robot data.
+    use_sim: false
+    # Cuboid dim threshold used to start initial object tracking process
+    fit_cuboid_dim_thresh: 0.2
+    # Resolution to perform voxel downsampling for accumulated instance point cloud. -1 means no downsample
+    downsample_res: -1
+    # only keep the most recent num_points_limit_per_instance for any segmented point cloud instance while tracking it
+    num_instance_point_lim: 10000
+    # time to delete a track if it is not updated for a long time
+    time_to_delete_lost_track_cuboid: 30
+    # save figures of object clustering results from DBSCAN
+    visualize_DBSCAN_results: false
+    output_dir_to_save_figs: "./"

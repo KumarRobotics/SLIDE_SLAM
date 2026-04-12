@@ -1,23 +1,26 @@
-ground_class_label: 0 # the label corresponds to ground class
-car_class_label: 1 # the label corresponds to vehicle class
-tree_trunk_class_label: 8 # the label corresponds to tree class
-light_pole_class_label: 9 # the label corresponds to light pole class
-desired_acc_obj_pub_rate: 1 # in Hz
-valid_range_threshold: 6.0 # in meters
-epsilon_scan: 0.5 # epsilon_scan: determines the radius of clustering when considering neighboring points as single cluster.
-min_samples_scan: 100 # min_samples_scan : determines the minimum samples needed inside the epsilon radius of the cluster to be clustered together
-depth_percentile_lower: 30 # depth_percentile_lower: depth percentile for filtering out noisy points in depth camera
-depth_percentile_uppper: 50 # depth_percentile_uppper: depth percentile for filtering out noisy points in depth camera
-confidence_threshold: 0.5 # confidence_threshold: confidence threshold for filtering out noisy points in depth camera
-cuboid_length_cutoff_upper: 1.5 # cuboid_length_cutoff_upper: cutoff for filtering out the FINAL false positive cuboids
-cuboid_width_cutoff_upper: 1.5 # cuboid_width_cutoff_upper: cutoff for filtering out the FINAL false positive cuboids
-cuboid_height_cutoff_upper: 5 # cuboid_height_cutoff_upper: cutoff for filtering out the FINAL false positive cuboids  assignment_threshold: 1.0 # assignment_threshold: Hungarian assignment cost to associate 2 cuboid centroids as one
-downsample_res: 0.1 # Resolution to perform voxel downsampling for instance point cloud accumulation
-num_instance_point_lim: 30000 # only keep the most recent num_points_limit_per_instance for any instance
-for_forestry_bags: False # run forestry data or not
-sim: True
-########### THREE PARAMS ARE LINKED TOGETHER ###########
-expected_segmentation_rate: 3 # in Hz
-time_to_initialize_cuboid: 0.3 # time_to_initialize_cuboid: Minimum time required to track a cuboid per lidar scan
-time_to_delete_lost_track_cuboid: 5 # time_to_delete_lost_track_cuboid: Lower will delete tracks faster and will cause new tracks to be initiated at the same location
-########################################################
+# Description: Parameters for the legacy process_cloud_node simulation profile.
+/**:
+  ros__parameters:
+    ground_class_label: 0
+    car_class_label: 1
+    tree_trunk_class_label: 8
+    light_pole_class_label: 9
+    desired_acc_obj_pub_rate: 1.0
+    valid_range_threshold: 6.0
+    epsilon_scan: 0.5
+    min_samples_scan: 100
+    depth_percentile_lower: 30
+    depth_percentile_uppper: 50
+    confidence_threshold: 0.5
+    cuboid_length_cutoff_upper: 1.5
+    cuboid_width_cutoff_upper: 1.5
+    cuboid_height_cutoff_upper: 5.0
+    downsample_res: 0.1
+    num_instance_point_lim: 30000
+    for_forestry_bags: false
+    sim: true
+    ########### THREE PARAMS ARE LINKED TOGETHER ###########
+    expected_segmentation_rate: 3
+    time_to_initialize_cuboid: 0.3
+    time_to_delete_lost_track_cuboid: 5
+    ########################################################

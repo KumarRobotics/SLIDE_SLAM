@@ -1,50 +1,48 @@
 # Description: Parameters for the process_cloud_node_outdoor.py file
+/**:
+  ros__parameters:
+    #------------------Important Parameters START------------------
+    # threshold for segmented lidar points range in meters
+    valid_range_threshold: 40.0
+    # expected segmentation frequency in Hz
+    expected_segmentation_frequency: 2.0
+    # Minimum time in seconds to track a cuboid for before cuboid fitting
+    time_to_initialize_cuboid: 3.0
+    # DBSCAN parameters for clustering the segmented point cloud
+    use_1st_layer_clustering: true
+    use_2nd_layer_clustering: true
+    epsilon_scan_1st_layer: 0.1
+    min_samples_scan_1st_layer: 7
+    epsilon_scan_2nd_layer: 0.5
+    min_samples_scan_2nd_layer: 25
+    # Flag to determine whether to estimate facing direction of car
+    estimate_facing_dir_car: false
+    # Flag to determine whether to cluster and fix cuboid orientation
+    cluster_and_fix_cuboid_orientation: true
+    # Flag for running KITTI dataset benchmarking code
+    run_kitti: false
+    # input point cloud parameters
+    pc_width: 1024
+    pc_height: 64
+    pc_point_step: 16
+    #------------------Important Parameters END------------------
 
-#------------------Important Parameters START------------------
-# threshold for segmented lidar points range in meters
-valid_range_threshold: 40.0
-# expected segmentation frequency in Hz
-expected_segmentation_frequency: 2.0
-# Minimum time in seconds to track a cuboid for before cuboid fitting
-time_to_initialize_cuboid: 3.0
-# TODO(ankit): Change the use_1st_layer_clustering param names to something more intuitive
-# DBSCAN parameters for clustering the segmented point cloud
-# The first layer of clustering is done to throw away small noisy points. Hence the parameters need to be conservative
-# The second layer of clustering is done to cluster the remaining points into objects. Hence the parameters can be more aggressive
-use_1st_layer_clustering: True
-use_2nd_layer_clustering: True
-epsilon_scan_1st_layer: 0.1
-min_samples_scan_1st_layer: 7
-epsilon_scan_2nd_layer: 0.5 
-min_samples_scan_2nd_layer: 25
-# Flag to determine whether to estimate facing direction of car by comparing front and rear heights
-estimate_facing_dir_car: False
-# Flag to determine whether to cluster and fix cuboid orientation by taking a consensus of the orientations of the cuboids in the cluster
-cluster_and_fix_cuboid_orientation: True
-# Flag for running KITTI dataset benchmarking code
-run_kitti: False
-# input point cloud parameters
-pc_width: 1024
-pc_heigh: 64
-pc_point_step: 16
-#------------------Important Parameters END------------------
-
-# Minimum number of ground points required to perform RANSAC and fit a plane
-ransac_n_points: 50
-# the height above the ground plane to consider a point as an object point. All points below this height are considered as ground points and not used for object fitting
-ground_median_increment: 0.25
-# use simulator or run on real robot data. SHOULD ALWAYS BE FALSE for running on real robot data
-use_sim: False
-# visualize all cuboid instances (keep track of all and never remove tracks), should be set as False unless debugging
-track_always_visualize: False
-# Cuboid dim threshold used to start initial object tracking process
-fit_cuboid_dim_thresh: 0.5
-# Resolution to perform voxel downsampling for accumulated instance point cloud. -1 means no downsample
-downsample_res: -1
-# only keep the most recent num_points_limit_per_instance for any segmented point cloud instance while tracking it
-num_instance_point_lim: 10000
-# time to delete a track if it is not updated for a long time
-time_to_delete_lost_track_cuboid: 45
-# save figures of object clustering results from DBSCAN
-visualize_DBSCAN_results: False
-output_dir_to_save_figs: "./"
+    # Minimum number of ground points required to perform RANSAC and fit a plane
+    ransac_n_points: 50
+    # the height above the ground plane to consider a point as an object point.
+    ground_median_increment: 0.25
+    # use simulator or run on real robot data.
+    use_sim: false
+    # visualize all cuboid instances
+    track_always_visualize: false
+    # Cuboid dim threshold used to start initial object tracking process
+    fit_cuboid_dim_thresh: 0.5
+    # Resolution to perform voxel downsampling for accumulated instance point cloud. -1 means no downsample
+    downsample_res: -1
+    # only keep the most recent num_points_limit_per_instance for any segmented point cloud instance while tracking it
+    num_instance_point_lim: 10000
+    # time to delete a track if it is not updated for a long time
+    time_to_delete_lost_track_cuboid: 45.0
+    # save figures of object clustering results from DBSCAN
+    visualize_DBSCAN_results: false
+    output_dir_to_save_figs: "./"

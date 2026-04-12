@@ -1,8 +1,0 @@
-<launch>
-    <arg name="odom_topic" default="/Odometry"/>
-      <arg name="robot_name" default="robot0"/>
-  
-      <node pkg="scan2shape_launch" type="process_cloud_node_lidar_indoor.py" name="process_cloud_node" output="screen" launch-prefix="taskset -c 0-3" ns="$(arg robot_name)">
-          <remap from="/Odometry" to="$(arg odom_topic)"/>
-    </node>
-  </launch>

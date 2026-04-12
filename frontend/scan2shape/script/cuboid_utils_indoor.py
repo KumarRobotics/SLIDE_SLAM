@@ -1,10 +1,9 @@
-#! /usr/bin/env python3
+#!/usr/bin/env python3
 
-import rospy
 import numpy as np
 from visualization_msgs.msg import MarkerArray, Marker
 from scipy.spatial.transform import Rotation as R
-import tf
+import tf2_ros
 from sklearn.decomposition import PCA
 import open3d as o3d
 import copy
@@ -62,8 +61,9 @@ def generate_publish_instance_cloud_indoor(process_cloud_node_object, timestamp)
         pc_msg_2.data = full_data_2.tobytes()
         process_cloud_node_object.instance_cloud_pub.publish(pc_msg_2)
 
-        rospy.loginfo_throttle(
-            5, "Published segmented and accumulated instance cloud")
+        process_cloud_node_object.get_logger().info(
+            "Published segmented and accumulated instance cloud",
+            throttle_duration_sec=5)
 
         instances_xyzl_copied = copy.deepcopy(instances_xyzl)
         global_track_ids_copied = copy.deepcopy(global_track_ids)
@@ -280,8 +280,15 @@ def publish_cuboid_and_range_bearing_measurements_final(process_cloud_node_objec
     H_body_world = np.zeros((4, 4), dtype=np.float32)
     try:
         # transform data in the source_frame into the target_frame
-        (t_body_world, quat_body_world) = process_cloud_node_object.tf_listener2.lookupTransform(
+        tf_msg = process_cloud_node_object.tf_buffer.lookup_transform(
             process_cloud_node_object.reference_frame, process_cloud_node_object.range_image_frame, current_raw_timestamp)
+        t_body_world = (tf_msg.transform.translation.x,
+                        tf_msg.transform.translation.y,
+                        tf_msg.transform.translation.z)
+        quat_body_world = (tf_msg.transform.rotation.x,
+                           tf_msg.transform.rotation.y,
+                           tf_msg.transform.rotation.z,
+                           tf_msg.transform.rotation.w)
         r_body_world = R.from_quat(quat_body_world)
         H_body_world_rot = r_body_world.as_matrix()
         H_body_world_trans = np.array(t_body_world)
@@ -290,9 +297,10 @@ def publish_cuboid_and_range_bearing_measurements_final(process_cloud_node_objec
         # body to world transformation
         H_body_world[3, 3] = 1
 
-    except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-        rospy.logwarn("cannot find TF from " + process_cloud_node_object.range_image_frame +
-                      " to " + process_cloud_node_object.reference_frame)
+    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+        process_cloud_node_object.get_logger().warn(
+            "Cannot find TF from " + process_cloud_node_object.range_image_frame +
+            " to " + process_cloud_node_object.reference_frame)
         return
 
     for idx, cuboid in enumerate(cuboids):

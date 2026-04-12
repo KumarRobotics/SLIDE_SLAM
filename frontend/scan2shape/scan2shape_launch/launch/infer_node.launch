@@ -1,7 +1,0 @@
-<launch>
-    <arg name="infer_node_name" default="inference_node"/>
-    <param name="infer_node_name" value="$(arg infer_node_name)"/>
-    <node pkg="scan2shape_launch" type="infer_node.py" name="$(arg infer_node_name)" output="screen" launch-prefix="taskset -c 0">
-        <rosparam command="load" file="$(find scan2shape_launch)/config/infer_node_params.yaml"/>
-    </node>
-</launch>

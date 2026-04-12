@@ -1,4 +1,0 @@
-<launch>
-    <node pkg="scan2shape_launch" type="process_cloud_node.py" name="process_cloud_node2" output="screen" launch-prefix="taskset -c 0"></node>
-    <node name="segmentation_throttler" type="throttle" pkg="topic_tools" args="messages /os_node/segmented_point_cloud_no_destagger 1.5 /os_node/segmented_point_cloud_no_destagger/throttled" />
-</launch>

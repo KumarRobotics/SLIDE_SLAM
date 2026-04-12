@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<launch>
-    <include file="$(find ouster_decoder)/launch/driver.launch"></include>
-    <include file="$(find ouster_decoder)/launch/decoder.launch">
-        <arg name="replay" value="true" />
-    </include>
-</launch>

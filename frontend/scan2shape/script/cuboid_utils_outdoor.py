@@ -1,14 +1,12 @@
-#! /usr/bin/env python3
-# title			:
-# description	:
-# author		:Xu Liu  and Ankit Prabhu
+#!/usr/bin/env python3
+# title         :
+# description   :
+# author        :Xu Liu  and Ankit Prabhu
 
-#!/usr/bin/env python
-import rospy
 import numpy as np
 from visualization_msgs.msg import MarkerArray, Marker
 from scipy.spatial.transform import Rotation as R
-import tf
+import tf2_ros
 from sklearn.decomposition import PCA
 import open3d as o3d
 import copy
@@ -43,8 +41,9 @@ def generate_publish_instance_cloud(process_cloud_node_object, timestamp):
                         (valid_points_labels, current_xyzi))
 
     else:
-        rospy.loginfo_throttle(
-            5, "No valid class object found in segmented accumulated point cloud. If this is unexpected, debug the tracking pipeline.")
+        process_cloud_node_object.get_logger().info(
+            "No valid class object found in segmented accumulated point cloud. If this is unexpected, debug the tracking pipeline.",
+            throttle_duration_sec=5)
         return None
 
     # publish
@@ -64,8 +63,9 @@ def generate_publish_instance_cloud(process_cloud_node_object, timestamp):
         pc_msg_2.data = full_data_2.tobytes()
         process_cloud_node_object.instance_cloud_pub.publish(pc_msg_2)
 
-        rospy.loginfo_throttle(
-            5, "Published segmented and accumulated instance cloud")
+        process_cloud_node_object.get_logger().info(
+            "Published segmented and accumulated instance cloud",
+            throttle_duration_sec=5)
 
         return copy.deepcopy(instances_xyzl)
 
@@ -123,8 +123,9 @@ def cuboid_detection(process_cloud_node_object, instances_xyzl, current_raw_time
 
         # estimate the heading direction for particularly car class
         if process_cloud_node_object.estimate_facing_dir_car:
-            rospy.logwarn_throttle(
-                10, "Estimating facing direction of the car, disable the flag if there is weird cuboid behavior")
+            process_cloud_node_object.get_logger().warn(
+                "Estimating facing direction of the car, disable the flag if there is weird cuboid behavior",
+                throttle_duration_sec=10)
             # Estimate the facing direction of the car based on the height of the front and rear part of the car
             # The logic is that the back of the car should have a median height higher than the front of the car
             rear_cut_off = np.percentile(x_projections, 5)  # 5 percentile
@@ -202,8 +203,10 @@ def fit_cuboid(fit_cuboid_dim_thresh, cloud_mat_3d, labels):
             widths.append(width)
             raw_points.append(xyzs)
         else:
-            rospy.logwarn_throttle(
-                7, f"Discarding current cuboid from tracking process because smallest dim ({min_dim}) is less than threshold ({fit_cuboid_dim_thresh})")
+            # Free function — no node logger available; using print fallback.
+            print(
+                f"[fit_cuboid] Discarding current cuboid from tracking process because "
+                f"smallest dim ({min_dim}) is less than threshold ({fit_cuboid_dim_thresh})")
 
     return xcs, ycs, lengths, widths, raw_points
 
@@ -300,7 +303,8 @@ def cluster_cuboid_orientation(cuboids):
 
         return cuboids
     else:
-        rospy.loginfo("Not enough cuboids to fix cuboid yaw orientation")
+        # Free function — no node logger available; using print fallback.
+        print("[cluster_cuboid_orientation] Not enough cuboids to fix cuboid yaw orientation")
         return cuboids
 
 
@@ -312,8 +316,9 @@ def publish_cuboid_markers(process_cloud_node_object, cuboids, current_raw_times
     # This function clusters the orientation of the cuboids and sets the orientation of the cuboids to the cluster center.
     # In this way, the orientation of the cuboids is consistent across all cuboids.
     if process_cloud_node_object.cluster_and_fix_cuboid_orientation == True:
-        rospy.loginfo_throttle(
-            5, "Clustering and fixing cuboid orientation. Disable this flag if there is weird cuboid orientation behavior.")
+        process_cloud_node_object.get_logger().info(
+            "Clustering and fixing cuboid orientation. Disable this flag if there is weird cuboid orientation behavior.",
+            throttle_duration_sec=5)
         cuboids = cluster_cuboid_orientation(cuboids)
 
     cuboid_markers = MarkerArray()
@@ -334,8 +339,15 @@ def publish_cuboid_markers(process_cloud_node_object, cuboids, current_raw_times
     H_body_world = np.zeros((4, 4), dtype=np.float32)
     try:
         # transform data in the source_frame into the target_frame
-        (t_body_world, quat_body_world) = process_cloud_node_object.tf_listener2.lookupTransform(
+        tf_msg = process_cloud_node_object.tf_buffer.lookup_transform(
             process_cloud_node_object.reference_frame, process_cloud_node_object.range_image_frame, current_raw_timestamp)
+        t_body_world = (tf_msg.transform.translation.x,
+                        tf_msg.transform.translation.y,
+                        tf_msg.transform.translation.z)
+        quat_body_world = (tf_msg.transform.rotation.x,
+                           tf_msg.transform.rotation.y,
+                           tf_msg.transform.rotation.z,
+                           tf_msg.transform.rotation.w)
         r_body_world = R.from_quat(quat_body_world)
         H_body_world_rot = r_body_world.as_matrix()
         H_body_world_trans = np.array(t_body_world)
@@ -344,9 +356,10 @@ def publish_cuboid_markers(process_cloud_node_object, cuboids, current_raw_times
         # body to world transformation
         H_body_world[3, 3] = 1
 
-    except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-        rospy.logwarn("\n cannot find tf from " + process_cloud_node_object.range_image_frame +
-                      " to " + process_cloud_node_object.reference_frame)
+    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+        process_cloud_node_object.get_logger().warn(
+            "Cannot find tf from " + process_cloud_node_object.range_image_frame +
+            " to " + process_cloud_node_object.reference_frame)
         return
 
     for idx, cuboid in enumerate(cuboids):
@@ -441,4 +454,6 @@ def publish_cuboid_markers(process_cloud_node_object, cuboids, current_raw_times
     process_cloud_node_object.cuboid_marker_body_pub.publish(
         cuboid_markers_body)
 
-    rospy.loginfo_throttle(5, "Published final cuboid markers...")
+    process_cloud_node_object.get_logger().info(
+        "Published final cuboid markers...",
+        throttle_duration_sec=5)

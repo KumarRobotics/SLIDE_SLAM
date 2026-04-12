@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import numpy as np
-import rospy
 import open3d as o3d
 
 
@@ -63,8 +62,10 @@ class ObjectTrack(object):
 
         # Only keep the most recent num_points_limit_per_instance points
         if self.all_raw_points.shape[0] > self.num_points_limit_per_instance:
-            rospy.loginfo_throttle(
-                1, 'Max number of points per instance reached. Limiting the number of points to: %d',  self.num_points_limit_per_instance)
+            # ObjectTrack does not have access to a node logger; use a print fallback.
+            print(
+                f"[ObjectTrack] Max number of points per instance reached. "
+                f"Limiting the number of points to: {self.num_points_limit_per_instance}")
             # take the most recent num_points_limit points
             self.all_raw_points = self.all_raw_points[- self.num_points_limit_per_instance:, :]
         self.last_update_scan_idx = scan_idx
@@ -73,6 +74,8 @@ class ObjectTrack(object):
         self.o_pcd.points = o3d.utility.Vector3dVector(points_xyz)
         downsampled_pcd = self.o_pcd.voxel_down_sample(
             voxel_size=self.downsample_res)
-        rospy.loginfo_throttle(10, 'Downsampled point cloud from %d to %d points', len(
-            points_xyz), len(downsampled_pcd.points))
+        # ObjectTrack does not have access to a node logger; use a print fallback.
+        print(
+            f"[ObjectTrack] Downsampled point cloud from {len(points_xyz)} to "
+            f"{len(downsampled_pcd.points)} points")
         return np.asarray(downsampled_pcd.points)

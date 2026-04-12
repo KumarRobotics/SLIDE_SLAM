@@ -1,7 +1,7 @@
-#! /usr/bin/env python3
-# title			:
-# description	:
-# author		:Xu Liu and Ankit Prabhu
+#!/usr/bin/env python3
+# title         :
+# description   :
+# author        :Xu Liu and Ankit Prabhu
 
 # type: sensor_msgs/PointCloud2
 # topic of interest: /os_node/llol_odom/sweep
@@ -10,41 +10,99 @@
 # goal: find the point cloud in /os_node/llol_odom/sweep topic that has matched timestamp of the pcds, and save them as world_frame_point_cloud_secs+nsecs.pcd
 
 import time
-from matplotlib import use
 import argparse
-import tf
-from tf2_ros import TransformListener, Buffer
+import copy
+import glob
+import os
+import sys
+import numpy as np
+
 from sensor_msgs.msg import PointCloud2, PointField
-from sensor_msgs import point_cloud2
+from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Header
 from geometry_msgs.msg import PoseStamped
 from sklearn.cluster import DBSCAN
-import copy
 from scipy.spatial.transform import Rotation as R
+from scipy.ndimage import label
 from visualization_msgs.msg import Marker, MarkerArray
 import message_filters
 import open3d as o3d
-from object_tracker_utils import track_objects_indoor
 
-import rospy
-from scipy.spatial.transform import Rotation as R
-import glob
-import ros_numpy
-import os
-import numpy as np
-from utils_outdoor import show_clusters, publish_tree_cloud, publish_ground_cloud, transform_publish_pc,send_tfs, publish_accumulated_cloud, make_fields, threshold_by_range, calc_dist_to_ground, publish_ground_cloud_and_fake_cubes
-from cuboid_utils_indoor import cluster_indoor, cuboid_detection_indoor, generate_publish_instance_cloud_indoor
-from cuboid_utils_indoor import publish_cuboid_and_range_bearing_measurements, publish_cuboid_and_range_bearing_measurements_with_models, publish_cuboid_and_range_bearing_measurements_by_floor, publish_cuboid_and_range_bearing_measurements_by_floor_properly
+import rclpy
+from rclpy.node import Node
+import tf2_ros
+from tf2_ros import TransformListener, Buffer, TransformBroadcaster
+
+# NOTE: This module is broken upstream — it imports several helpers from
+# utils_outdoor / cuboid_utils_indoor that do not exist there even in the
+# original ROS1 source tree (publish_tree_cloud, publish_ground_cloud_and_fake_cubes,
+# publish_cuboid_and_range_bearing_measurements{,_with_models,_by_floor*}). Those
+# call sites are commented out below or guarded by feature flags so the module
+# loads, but the imports themselves are kept disabled with try/except to allow
+# this node to start. Fixing the missing helpers is outside the scope of the
+# ROS1->ROS2 conversion.
+from utils_outdoor import (
+    show_clusters,
+    publish_ground_cloud,
+    transform_publish_pc,
+    send_tfs,
+    publish_accumulated_cloud,
+    make_fields,
+    threshold_by_range,
+    calc_dist_to_ground,
+)
+try:
+    from utils_outdoor import publish_tree_cloud, publish_ground_cloud_and_fake_cubes  # type: ignore
+except ImportError:
+    publish_tree_cloud = None
+    publish_ground_cloud_and_fake_cubes = None
+
+from cuboid_utils_indoor import (
+    cluster_indoor,
+    cuboid_detection_indoor,
+    generate_publish_instance_cloud_indoor,
+)
+try:
+    from cuboid_utils_indoor import (  # type: ignore
+        publish_cuboid_and_range_bearing_measurements,
+        publish_cuboid_and_range_bearing_measurements_with_models,
+        publish_cuboid_and_range_bearing_measurements_by_floor,
+        publish_cuboid_and_range_bearing_measurements_by_floor_properly,
+    )
+except ImportError:
+    publish_cuboid_and_range_bearing_measurements = None
+    publish_cuboid_and_range_bearing_measurements_with_models = None
+    publish_cuboid_and_range_bearing_measurements_by_floor = None
+    publish_cuboid_and_range_bearing_measurements_by_floor_properly = None
+
 from cuboid_utils_outdoor import fit_cuboid
-from object_tracker_utils import track_objects, publish_markers
+from object_tracker_utils import track_objects, track_objects_indoor, publish_markers
 from nav_msgs.msg import Odometry
-import sys
-from scipy.ndimage import label
+from sensor_msgs_py import point_cloud2 as pc2_py
 
 
+def _pointcloud2_to_structured(msg):
+    """Read a PointCloud2 message into a structured numpy ndarray.
 
-class ProcessCloudNode:
+    Replaces ros_numpy.numpify which is unavailable in ROS2 Jazzy.
+    """
+    field_names = [f.name for f in msg.fields]
+    raw = list(pc2_py.read_points(msg, field_names=field_names, skip_nans=False))
+    if len(raw) == 0:
+        return np.zeros((0,), dtype=[(n, np.float32) for n in field_names])
+    arr = np.array(raw)
+    if arr.dtype.names is not None:
+        return arr
+    dtype = [(n, np.float32) for n in field_names]
+    out = np.empty(arr.shape[0], dtype=dtype)
+    for i, n in enumerate(field_names):
+        out[n] = arr[:, i].astype(np.float32)
+    return out
+
+
+class ProcessCloudNode(Node):
     def __init__(self):
+        super().__init__("process_cloud_node")
         
         ################################## IMPORTANT PARAMS ##################################
         # # the label corresponds to ground class
@@ -157,8 +215,9 @@ class ProcessCloudNode:
         # Leave this as False, it will be automatically set according to callbacks
         self.use_faster_lio = False
 
-        self.tf_listener2 = tf.TransformListener()
-        self.odom_broadcaster = tf.TransformBroadcaster()
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.odom_broadcaster = TransformBroadcaster(self)
         self.pc_fields_ = make_fields()
 
 
@@ -182,34 +241,35 @@ class ProcessCloudNode:
         self.final_cuboid_detection_time = np.array([])
 
 
-        self.segmented_pc_pub = rospy.Publisher("process_cloud_node/filtered_semantic_segmentation", PointCloud2, queue_size=1)
-        self.car_convex_hull_pub = rospy.Publisher("car_convex_hull", PointCloud2, queue_size=100)
+        self.segmented_pc_pub = self.create_publisher(
+            PointCloud2, "process_cloud_node/filtered_semantic_segmentation", 1)
+        self.car_convex_hull_pub = self.create_publisher(
+            PointCloud2, "car_convex_hull", 100)
 
+        self.cuboid_center_marker_pub = self.create_publisher(
+            MarkerArray, "cuboid_centers", 1)
+        self.cuboid_center_cov_pub = self.create_publisher(
+            MarkerArray, "cuboid_centers_covariance", 1)
 
-        self.cuboid_center_marker_pub = rospy.Publisher(
-            "cuboid_centers", MarkerArray, queue_size=1)
-        self.cuboid_center_cov_pub = rospy.Publisher(
-            "cuboid_centers_covariance", MarkerArray, queue_size=1)
+        self.instance_cloud_pub = self.create_publisher(
+            PointCloud2, "pc_instance_segmentation_accumulated", 1)
 
-        self.instance_cloud_pub = rospy.Publisher(
-            "pc_instance_segmentation_accumulated", PointCloud2, queue_size=1)
+        self.cuboid_marker_pub = self.create_publisher(
+            MarkerArray, "chair_cuboids", 5)
 
-        self.cuboid_marker_pub = rospy.Publisher(
-            "chair_cuboids", MarkerArray, queue_size=5)
-        
-        self.cuboid_marker_body_pub = rospy.Publisher(
-            "chair_cuboids_body", MarkerArray, queue_size=5)
+        self.cuboid_marker_body_pub = self.create_publisher(
+            MarkerArray, "chair_cuboids_body", 5)
 
         self.odom_received = False
 
-        self.tree_cloud_pub = rospy.Publisher(
-            "tree_cloud", PointCloud2, queue_size=1)
+        self.tree_cloud_pub = self.create_publisher(
+            PointCloud2, "tree_cloud", 1)
 
-        self.ground_cloud_pub = rospy.Publisher(
-            "ground_cloud", PointCloud2, queue_size=1)
+        self.ground_cloud_pub = self.create_publisher(
+            PointCloud2, "ground_cloud", 1)
 
-        self.odom_pub = rospy.Publisher(
-            "/quadrotor/lidar_odom", Odometry, queue_size=100)
+        self.odom_pub = self.create_publisher(
+            Odometry, "/quadrotor/lidar_odom", 100)
 
 
         # frame ids
@@ -245,32 +305,32 @@ class ProcessCloudNode:
             #     [self.segmented_pc_sub, self.undistort_cloud_sub], 100, 0.01)
             # ts.registerCallback(self.segmented_synced_pc_cb)
             
-            self.segmented_pc_sub = rospy.Subscriber(
-                "/os_node/segmented_point_cloud_no_destagger", PointCloud2, callback=self.segmented_pc_cb, queue_size=10)
+            self.segmented_pc_sub = self.create_subscription(
+                PointCloud2, "/os_node/segmented_point_cloud_no_destagger",
+                self.segmented_pc_cb, 10)
 
-            self.odom_sub = rospy.Subscriber("/Odometry", Odometry, callback=self.odom_callback, queue_size=100)
+            self.odom_sub = self.create_subscription(
+                Odometry, "/Odometry", self.odom_callback, 100)
 
 
 
-            # synced version
-            # self.segmented_pc_sub = message_filters.Subscriber(
-            #     "/os_node/segmented_point_cloud_no_destagger", PointCloud2)
-            # self.odom_sub = message_filters.Subscriber(
-            #     "/Odometry", Odometry)
+            # synced version (commented out)
+            # self.segmented_pc_sub = message_filters.Subscriber(self, PointCloud2,
+            #     "/os_node/segmented_point_cloud_no_destagger")
+            # self.odom_sub = message_filters.Subscriber(self, Odometry, "/Odometry")
             # ts = message_filters.ApproximateTimeSynchronizer(
             #     [self.segmented_pc_sub, self.odom_sub], 100, 0.025)
             # ts.registerCallback(self.segmented_pc_with_odom_cb)
-
-        
 
             # self.cloud_frame_id = "quadrotor/base_link"
         else:
             print("Running simulation experiments...")
             time.sleep(1)
             # we need to sync point cloud with odometry in order to be able to find the transform precisely
-            self.sim_segmentation_sub = message_filters.Subscriber("/quadrotor/fake_lidar/car_cloud", PointCloud2)
+            self.sim_segmentation_sub = message_filters.Subscriber(
+                self, PointCloud2, "/quadrotor/fake_lidar/car_cloud")
             self.odom_sub = message_filters.Subscriber(
-            "/quadrotor/odom", Odometry)
+                self, Odometry, "/quadrotor/odom")
             ts = message_filters.ApproximateTimeSynchronizer(
                 [self.sim_segmentation_sub, self.odom_sub], 20, 0.01)
             ts.registerCallback(self.sim_segmented_synced_pc_cb)
@@ -321,11 +381,11 @@ class ProcessCloudNode:
         self.processed_scan_idx = self.processed_scan_idx + 1
         current_raw_timestamp = segmented_cloud_msg.header.stamp
         # create pc from the undistorted_cloud
-        segmented_pc = ros_numpy.numpify(segmented_cloud_msg)
+        segmented_pc = _pointcloud2_to_structured(segmented_cloud_msg)
         if self.use_sim or self.use_faster_lio:
             undistorted_pc = segmented_pc
         else:
-            undistorted_pc = ros_numpy.numpify(undistorted_cloud_msg)
+            undistorted_pc = _pointcloud2_to_structured(undistorted_cloud_msg)
         # update the x y z to those in the bag
         x_coords = np.nan_to_num(
             undistorted_pc['x'].flatten(), copy=True, nan=0.0, posinf=None, neginf=None)
@@ -666,13 +726,18 @@ class ProcessCloudNode:
             self.odom_received = True
 
 
-if __name__ == '__main__':
-
-    rospy.init_node("process_cloud_node")
-    r = rospy.Rate(30)
-    my_node = ProcessCloudNode()
-    while not rospy.is_shutdown():
-        print("node started!")
-        rospy.spin()
-    # r.sleep()
+def main(args=None):
+    rclpy.init(args=args)
+    node = ProcessCloudNode()
+    print("node started!")
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     print("node killed!")
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()

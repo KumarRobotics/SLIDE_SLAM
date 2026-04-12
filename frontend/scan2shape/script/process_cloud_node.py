@@ -1,43 +1,85 @@
-#! /usr/bin/env python3
+#!/usr/bin/env python3
 
 import time
-from matplotlib import use
-import tf
-from sensor_msgs.msg import PointCloud2
 import copy
-from scipy.spatial.transform import Rotation as R
-from visualization_msgs.msg import Marker, MarkerArray
-import open3d as o3d
-from sloam_msgs.msg import syncPcOdom
-import rospy
-import rospkg
-import ros_numpy
-import numpy as np
-from utils import transform_publish_pc, send_tfs, make_fields, threshold_by_range
-from cuboid_utils_indoor import fit_cuboid_indoor, cuboid_detection_indoor, generate_publish_instance_cloud_indoor, cluster_indoor, publish_cuboid_and_range_bearing_measurements_final
-from object_tracker_utils import track_objects_indoor, publish_markers
-from nav_msgs.msg import Odometry
+import os
 import sys
 import yaml
+import numpy as np
+import open3d as o3d
+from scipy.spatial.transform import Rotation as R
+
+import rclpy
+from rclpy.node import Node
+from rclpy.duration import Duration
+
+import tf2_ros
+from tf2_ros import Buffer, TransformBroadcaster, TransformListener
+
+from sensor_msgs.msg import PointCloud2
+from sensor_msgs_py import point_cloud2 as pc2_py
+from visualization_msgs.msg import Marker, MarkerArray
+from nav_msgs.msg import Odometry
+
+from ament_index_python.packages import get_package_share_directory
+
+from sloam_msgs.msg import SyncPcOdom
+
+from utils import (
+    transform_publish_pc,
+    send_tfs,
+    make_fields,
+    threshold_by_range,
+)
+from cuboid_utils_indoor import (
+    fit_cuboid_indoor,
+    cuboid_detection_indoor,
+    generate_publish_instance_cloud_indoor,
+    cluster_indoor,
+    publish_cuboid_and_range_bearing_measurements_final,
+)
+from object_tracker_utils import track_objects_indoor, publish_markers
 
 
-class ProcessCloudNode:
-    def __init__(self, node_name):
+def _pointcloud2_to_structured(msg):
+    """Read a PointCloud2 message into a structured numpy ndarray.
+
+    Replaces ros_numpy.numpify which is unavailable in ROS2 Jazzy.
+    """
+    field_names = [f.name for f in msg.fields]
+    raw = list(pc2_py.read_points(msg, field_names=field_names, skip_nans=False))
+    if len(raw) == 0:
+        return np.zeros((0,), dtype=[(n, np.float32) for n in field_names])
+    arr = np.array(raw)
+    # If the underlying call returned a structured array, return it; otherwise
+    # build one ourselves.
+    if arr.dtype.names is not None:
+        return arr
+    dtype = [(n, np.float32) for n in field_names]
+    out = np.empty(arr.shape[0], dtype=dtype)
+    for i, n in enumerate(field_names):
+        out[n] = arr[:, i].astype(np.float32)
+    return out
+
+
+class ProcessCloudNode(Node):
+    def __init__(self):
+        super().__init__("process_cloud_node")
 
         # DO NOT CHNAGE THIS TO ANYTHING OTHER THAN /ODOM. This is automatically remapped in the launch file
         self.odom_topic = "/odom"
 
-        rospack = rospkg.RosPack()
-
         # detect_no_seg: if true, meaning only object detection is done, no instance segmentation. This scenario uses YOLO-WORLD
-        self.detect_no_seg = rospy.get_param('~detect_no_seg', False)
+        self.declare_parameter("detect_no_seg", False)
+        self.detect_no_seg = self.get_parameter("detect_no_seg").value
 
+        share_dir = get_package_share_directory('scan2shape_launch')
         if self.detect_no_seg:
-            self.cls_config_path = rospack.get_path(
-                'scan2shape_launch') + '/config/process_cloud_node_indoor_open_vocab_cls_info.yaml'
+            self.cls_config_path = os.path.join(
+                share_dir, 'config', 'process_cloud_node_indoor_open_vocab_cls_info.yaml')
         else:
-            self.cls_config_path = rospack.get_path(
-                'scan2shape_launch') + '/config/process_cloud_node_indoor_cls_info.yaml'
+            self.cls_config_path = os.path.join(
+                share_dir, 'config', 'process_cloud_node_indoor_cls_info.yaml')
 
         with open(self.cls_config_path, 'r') as file:
             self.cls_data_all = yaml.load(file, Loader=yaml.FullLoader)
@@ -60,9 +102,6 @@ class ProcessCloudNode:
 
         self.class_assignment_thresh = {
             cls_name: self.cls_data_all[cls_name]["class_assignment_thresh"] for cls_name in self.cls_data_all.keys()}
-        
-        robot_name = rospy.get_param("/robot_name", default="robot0")
-        param_name_prefix = f"/{robot_name}/{node_name}/"
 
         self.color_by_floors = False  # For debugging only, leave it as False
         self.floor_height_thresh = {"floor_1": (
@@ -75,49 +114,48 @@ class ProcessCloudNode:
         self.min_samples_scan = 1
 
         ################################## IMPORTANT PARAMS ##################################
-        # TODO(ankit): See if making different confidence for different classes makes sense
-        self.confidence_threshold = rospy.get_param(
-            param_name_prefix+"confidence_threshold", default=0.4)
-        self.desired_acc_obj_pub_rate = rospy.get_param(
-            param_name_prefix+"desired_acc_obj_pub_rate", default=1.0)
-        self.expected_segmentation_rate = rospy.get_param(
-            param_name_prefix+"expected_segmentation_frequency", default=2.0)
-        self.use_sim = rospy.get_param(
-            param_name_prefix+"use_sim", default=False)
-        self.visualize = rospy.get_param(
-            param_name_prefix+"visualize_DBSCAN_results", default=False)
-        self.valid_range_threshold = rospy.get_param(
-            param_name_prefix+"valid_range_threshold", default=40.0)
-        self.fit_cuboid_length_thresh = rospy.get_param(
-            param_name_prefix+"fit_cuboid_dim_thresh", default=0.2)
+        self.declare_parameter("confidence_threshold", 0.4)
+        self.declare_parameter("desired_acc_obj_pub_rate", 1.0)
+        self.declare_parameter("expected_segmentation_frequency", 2.0)
+        self.declare_parameter("use_sim", False)
+        self.declare_parameter("visualize_DBSCAN_results", False)
+        self.declare_parameter("valid_range_threshold", 40.0)
+        self.declare_parameter("fit_cuboid_dim_thresh", 0.2)
+        self.declare_parameter("depth_percentile_lower", 35)
+        self.declare_parameter("depth_percentile_upper", 45)
+        self.declare_parameter("time_to_initialize_cuboid", 0.75)
+        self.declare_parameter("time_to_delete_lost_track_cuboid", 30)
+        self.declare_parameter("downsample_res", -1)
+        self.declare_parameter("num_instance_point_lim", 10000)
+        self.declare_parameter("pc_width", 1024)
+        self.declare_parameter("pc_height", 64)
+        self.declare_parameter("pc_point_step", 16)
 
-        depth_percentile_lower = rospy.get_param(
-            param_name_prefix+"depth_percentile_lower", default=35)
-        depth_percentile_uppper = rospy.get_param(
-            param_name_prefix+"depth_percentile_upper", default=45)
-        self.depth_percentile = (
-            depth_percentile_lower, depth_percentile_uppper)
+        self.confidence_threshold = self.get_parameter("confidence_threshold").value
+        self.desired_acc_obj_pub_rate = self.get_parameter("desired_acc_obj_pub_rate").value
+        self.expected_segmentation_rate = self.get_parameter("expected_segmentation_frequency").value
+        self.use_sim = self.get_parameter("use_sim").value
+        self.visualize = self.get_parameter("visualize_DBSCAN_results").value
+        self.valid_range_threshold = self.get_parameter("valid_range_threshold").value
+        self.fit_cuboid_length_thresh = self.get_parameter("fit_cuboid_dim_thresh").value
 
-        time_to_initialize_cuboid = rospy.get_param(
-            param_name_prefix+"time_to_initialize_cuboid", default=0.75)
+        depth_percentile_lower = self.get_parameter("depth_percentile_lower").value
+        depth_percentile_uppper = self.get_parameter("depth_percentile_upper").value
+        self.depth_percentile = (depth_percentile_lower, depth_percentile_uppper)
+
+        time_to_initialize_cuboid = self.get_parameter("time_to_initialize_cuboid").value
         self.tracker_age_thresh_lower = self.expected_segmentation_rate * \
             time_to_initialize_cuboid
 
-        time_to_delete_lost_track_cuboid = rospy.get_param(
-            param_name_prefix+"time_to_delete_lost_track_cuboid", default=30)
+        time_to_delete_lost_track_cuboid = self.get_parameter("time_to_delete_lost_track_cuboid").value
         self.num_lost_track_times_thresh = self.expected_segmentation_rate * \
             time_to_delete_lost_track_cuboid
 
-        self.downsample_res = rospy.get_param(
-            param_name_prefix+"downsample_res", default=-1)
-        self.num_instance_point_lim = rospy.get_param(
-            param_name_prefix+"num_instance_point_lim", default=10000)
-        self.pc_width = rospy.get_param(
-            param_name_prefix+"pc_width", default=1024)
-        self.pc_height = rospy.get_param(
-            param_name_prefix+"pc_height", default=64)
-        self.pc_point_step = rospy.get_param(
-            param_name_prefix+"pc_point_step", default=16)
+        self.downsample_res = self.get_parameter("downsample_res").value
+        self.num_instance_point_lim = self.get_parameter("num_instance_point_lim").value
+        self.pc_width = self.get_parameter("pc_width").value
+        self.pc_height = self.get_parameter("pc_height").value
+        self.pc_point_step = self.get_parameter("pc_point_step").value
         ################################## IMPORTANT PARAMS ENDS ##################################
 
         # CONTAINERS and VARIABLES
@@ -131,32 +169,33 @@ class ProcessCloudNode:
         self.processed_scan_idx = -1
         self.prev_acc_obj_pub_time = None
 
-        self.tf_listener2 = tf.TransformListener()
-        self.odom_broadcaster = tf.TransformBroadcaster()
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.odom_broadcaster = TransformBroadcaster(self)
         self.pc_fields_ = make_fields()
 
         # PUBLISHERS
-        self.segmented_pc_pub = rospy.Publisher(
-            "filtered_semantic_segmentation", PointCloud2, queue_size=1)
-        self.cuboid_center_marker_pub = rospy.Publisher(
-            "cuboid_centers", MarkerArray, queue_size=1)
+        self.segmented_pc_pub = self.create_publisher(
+            PointCloud2, "filtered_semantic_segmentation", 1)
+        self.cuboid_center_marker_pub = self.create_publisher(
+            MarkerArray, "cuboid_centers", 1)
         # TODO(ankit): Check and remove covariance markers if not needed
-        self.cuboid_center_cov_pub = rospy.Publisher(
-            "cuboid_centers_covariance", MarkerArray, queue_size=1)
-        self.instance_cloud_pub = rospy.Publisher(
-            "pc_instance_segmentation_accumulated", PointCloud2, queue_size=1)
+        self.cuboid_center_cov_pub = self.create_publisher(
+            MarkerArray, "cuboid_centers_covariance", 1)
+        self.instance_cloud_pub = self.create_publisher(
+            PointCloud2, "pc_instance_segmentation_accumulated", 1)
         # TODO(ankit): Current "chair_cuboids" topic is used for publishing all object models. Change this to a more generic name
-        self.cuboid_marker_pub = rospy.Publisher(
-            "chair_cuboids", MarkerArray, queue_size=5)
-        self.cuboid_marker_body_pub = rospy.Publisher(
-            "chair_cuboids_body", MarkerArray, queue_size=5)
-        self.tree_cloud_pub = rospy.Publisher(
-            "tree_cloud", PointCloud2, queue_size=1)
-        self.ground_cloud_pub = rospy.Publisher(
-            "ground_cloud", PointCloud2, queue_size=1)
+        self.cuboid_marker_pub = self.create_publisher(
+            MarkerArray, "chair_cuboids", 5)
+        self.cuboid_marker_body_pub = self.create_publisher(
+            MarkerArray, "chair_cuboids_body", 5)
+        self.tree_cloud_pub = self.create_publisher(
+            PointCloud2, "tree_cloud", 1)
+        self.ground_cloud_pub = self.create_publisher(
+            PointCloud2, "ground_cloud", 1)
         # TODO(ankit): Check if this is needed
-        self.odom_pub = rospy.Publisher(
-            "quadrotor/lidar_odom", Odometry, queue_size=100)
+        self.odom_pub = self.create_publisher(
+            Odometry, "quadrotor/lidar_odom", 100)
 
         # frame ids
         if self.use_sim == False:
@@ -172,22 +211,24 @@ class ProcessCloudNode:
 
         # subscriber and publisher
         if self.use_sim == False:
-            rospy.loginfo("Running real-world experiments...")
+            self.get_logger().info("Running real-world experiments...")
             time.sleep(1)
 
-            self.segmented_pc_sub = rospy.Subscriber(
-                "sem_detection/sync_pc_odom", syncPcOdom, callback=self.segmented_pc_cb, queue_size=1)
+            self.segmented_pc_sub = self.create_subscription(
+                SyncPcOdom, "sem_detection/sync_pc_odom", self.segmented_pc_cb, 1)
 
-            self.odom_sub = rospy.Subscriber(
-                self.odom_topic, Odometry, callback=self.odom_callback, queue_size=100)
+            self.odom_sub = self.create_subscription(
+                Odometry, self.odom_topic, self.odom_callback, 100)
 
         else:
-            rospy.logwarn("Running simulation experiments. This mode is still under development and is not fully tested. Switch the self.use_sim flag to False to run real-world experiments which work correctly.")
+            self.get_logger().warn(
+                "Running simulation experiments. This mode is still under development and is not fully tested. "
+                "Switch the self.use_sim flag to False to run real-world experiments which work correctly.")
             time.sleep(10)
-            self.segmented_pc_sub = rospy.Subscriber(
-                "sem_detection/sync_pc_odom", syncPcOdom, callback=self.segmented_pc_cb, queue_size=1)
-            self.odom_sub = rospy.Subscriber(
-                self.odom_topic, Odometry, callback=self.odom_callback, queue_size=100)
+            self.segmented_pc_sub = self.create_subscription(
+                SyncPcOdom, "sem_detection/sync_pc_odom", self.segmented_pc_cb, 1)
+            self.odom_sub = self.create_subscription(
+                Odometry, self.odom_topic, self.odom_callback, 100)
 
     def sim_segmented_synced_pc_cb(self, chair_cloud_msg, odom_msg):
         self.segmented_synced_pc_cb(chair_cloud_msg, None)
@@ -203,7 +244,7 @@ class ProcessCloudNode:
         self.processed_scan_idx += 1
         current_raw_timestamp = segmented_cloud_msg.header.stamp
         # create pc from the undistorted_cloud
-        segmented_pc = ros_numpy.numpify(segmented_cloud_msg)
+        segmented_pc = _pointcloud2_to_structured(segmented_cloud_msg)
         # remove nan values
         x_coords = np.nan_to_num(
             segmented_pc['x'].flatten(), copy=True, nan=0.0, posinf=None, neginf=None)
@@ -234,7 +275,7 @@ class ProcessCloudNode:
             self.valid_range_threshold, pc_xyzi_id_conf)
 
         if np.sum(valid_indices) == 0:
-            rospy.logwarn(
+            self.get_logger().warn(
                 "No valid points found after range thresholding. Skipping this scan!!! Make sure the self.valid_range_threshold is set correctly.")
             return
 
@@ -246,13 +287,13 @@ class ProcessCloudNode:
                                                                                          current_raw_timestamp, pc_xyzi_id_conf_thresholded)
 
         if points_world_xyzi_id_conf_depth is None or points_body_xyzi_id_conf is None:
-            rospy.logwarn(
+            self.get_logger().warn(
                 "Failed to transform point cloud to world frame. Skipping this scan!!!")
-            rospy.logwarn(
+            self.get_logger().warn(
                 "This may be caused due to transform_publish_pc function not performing correctly. Check the above warning messages.")
-            rospy.logwarn(
-                "If you are replying bags, try setting /use_sim_time to true and add --clock flag to rosbag play")
-            rospy.logwarn(
+            self.get_logger().warn(
+                "If you are replying bags, try setting use_sim_time to true and add --clock flag to ros2 bag play")
+            self.get_logger().warn(
                 "It may also be caused by excessive CPU load, play bag with slower rate")
 
         else:
@@ -284,8 +325,9 @@ class ProcessCloudNode:
                     publish_markers(self, self.all_tracks, cur_cls_name=cur_object_class,
                                     age_threshold=self.tracker_age_thresh_lower)
                 else:
-                    rospy.logwarn_throttle(
-                        7, "No valid objects found for object fitting")
+                    self.get_logger().warn(
+                        "No valid objects found for object fitting",
+                        throttle_duration_sec=7)
 
                 # get rid of too old tracks to bound computation and make sure our cuboid measurements are local and do not incorporate too much odom noise
                 idx_to_delete = []
@@ -310,11 +352,17 @@ class ProcessCloudNode:
 
                 if len(cuboids) > 0:
 
-                    if (self.prev_acc_obj_pub_time is not None) and ((rospy.Time.now() - self.prev_acc_obj_pub_time).to_sec() < 1.0/self.desired_acc_obj_pub_rate):
-                        rospy.logwarn_throttle(5, "Time elapsed since last depth rgb callback is: " + str((rospy.Time.now() - self.prev_acc_obj_pub_time).to_sec(
-                        )) + " seconds. Skipping current depth image to get desired rate of " + str(self.desired_acc_obj_pub_rate) + " Hz")
+                    now = self.get_clock().now()
+                    if self.prev_acc_obj_pub_time is not None and \
+                            (now - self.prev_acc_obj_pub_time) < Duration(seconds=1.0 / self.desired_acc_obj_pub_rate):
+                        elapsed_sec = (now - self.prev_acc_obj_pub_time).nanoseconds * 1e-9
+                        self.get_logger().warn(
+                            "Time elapsed since last depth rgb callback is: " + str(elapsed_sec) +
+                            " seconds. Skipping current depth image to get desired rate of " +
+                            str(self.desired_acc_obj_pub_rate) + " Hz",
+                            throttle_duration_sec=5)
                     else:
-                        self.prev_acc_obj_pub_time = rospy.Time.now()
+                        self.prev_acc_obj_pub_time = now
 
                         if self.color_by_floors == True:
                             cuboid_clus_labels = cluster_indoor(np.array(
@@ -329,16 +377,16 @@ class ProcessCloudNode:
         send_tfs(self, msg)
 
 
+def main(args=None):
+    rclpy.init(args=args)
+    node = ProcessCloudNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()
+
+
 if __name__ == '__main__':
-
-    node_name = rospy.get_param(
-        '/process_cloud_node_name', 'process_cloud_node')
-
-    rospy.init_node(node_name)
-
-    process_cloud_node = ProcessCloudNode(node_name)
-
-    while not rospy.is_shutdown():
-        print("node started!")
-        rospy.spin()
-    print("node killed!")
+    main()

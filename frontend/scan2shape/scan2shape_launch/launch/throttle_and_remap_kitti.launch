@@ -1,5 +1,0 @@
-<launch>
-\
-  <!-- Throttle /os_node/segmented_point_cloud_no_destagger to 2 Hz and republish it back to the same topic -->
-  <node pkg="topic_tools" type="throttle" name="throttle_semantic_point_cloud" args="messages /os_node/segmented_point_cloud_no_destagger_high_freq 2.0 /os_node/segmented_point_cloud_no_destagger" output="screen" />
-</launch>

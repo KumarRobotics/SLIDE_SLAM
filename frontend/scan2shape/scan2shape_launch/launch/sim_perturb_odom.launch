@@ -1,5 +1,0 @@
-<launch>
-    <node pkg="scan2shape_launch" type="add_noise_to_ground_truth_odom.py" name="add_noise_to_ground_truth_odom" output="screen" launch-prefix="taskset -c 0">
-        <remap from="/gt_odom" to="/ddk/ground_truth/odom"/>
-    </node>
-</launch>

@@ -1,11 +1,11 @@
-#! /usr/bin/env python3
+#!/usr/bin/env python3
 
-import rospy
 import numpy as np
 from visualization_msgs.msg import MarkerArray, Marker
 from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Header
-import tf
+import tf2_ros
+from geometry_msgs.msg import TransformStamped
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
@@ -165,8 +165,15 @@ def transform_publish_pc(process_cloud_node_object, current_timestamp, pc_xyzi_t
 
     try:
         # transform data from the source_frame into the target_frame
-        (t_world_pano, quat_world_pano) = process_cloud_node_object.tf_listener2.lookupTransform(
+        tf_msg = process_cloud_node_object.tf_buffer.lookup_transform(
             process_cloud_node_object.undistorted_cloud_frame, process_cloud_node_object.reference_frame, current_timestamp)
+        t_world_pano = (tf_msg.transform.translation.x,
+                        tf_msg.transform.translation.y,
+                        tf_msg.transform.translation.z)
+        quat_world_pano = (tf_msg.transform.rotation.x,
+                           tf_msg.transform.rotation.y,
+                           tf_msg.transform.rotation.z,
+                           tf_msg.transform.rotation.w)
         r_world_pano = R.from_quat(quat_world_pano)
         H_world_pano_rot = r_world_pano.as_matrix()
         H_world_pano_trans = np.array(t_world_pano)
@@ -176,9 +183,10 @@ def transform_publish_pc(process_cloud_node_object, current_timestamp, pc_xyzi_t
         H_world_pano[:3, 3] = H_world_pano_trans
         H_world_pano[3, 3] = 1
 
-    except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-        rospy.logwarn("For timestamp, " + str(current_timestamp.to_sec()) + ", cannot find TF from " + process_cloud_node_object.reference_frame +
-                      " to " + process_cloud_node_object.undistorted_cloud_frame + ", skipping this point cloud.")
+    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+        process_cloud_node_object.get_logger().warn(
+            "Cannot find TF from " + process_cloud_node_object.reference_frame +
+            " to " + process_cloud_node_object.undistorted_cloud_frame + ", skipping this point cloud.")
         return None, None
 
     points_pano_xyz = pc_xyzi_thresholded[:, :3]
@@ -214,24 +222,34 @@ def transform_publish_pc(process_cloud_node_object, current_timestamp, pc_xyzi_t
     pc_msg.data = full_data.tobytes()
 
     process_cloud_node_object.segmented_pc_pub.publish(pc_msg)
-    rospy.loginfo_throttle(5, "Filtered segmented point cloud published")
+    process_cloud_node_object.get_logger().info(
+        "Filtered segmented point cloud published",
+        throttle_duration_sec=5)
 
     # prepare point clouds for cylinder fitting
     if process_cloud_node_object.use_sim == False:
         H_body_pano = np.zeros((4, 4))
         try:
             # transform data in the source_frame into the target_frame
-            (t_body_pano, quat_body_pano) = process_cloud_node_object.tf_listener2.lookupTransform(
+            tf_msg2 = process_cloud_node_object.tf_buffer.lookup_transform(
                 process_cloud_node_object.undistorted_cloud_frame, process_cloud_node_object.range_image_frame, current_timestamp)
+            t_body_pano = (tf_msg2.transform.translation.x,
+                           tf_msg2.transform.translation.y,
+                           tf_msg2.transform.translation.z)
+            quat_body_pano = (tf_msg2.transform.rotation.x,
+                              tf_msg2.transform.rotation.y,
+                              tf_msg2.transform.rotation.z,
+                              tf_msg2.transform.rotation.w)
             r_body_pano = R.from_quat(quat_body_pano)
             H_body_pano_rot = r_body_pano.as_matrix()
             H_body_pano_trans = np.array(t_body_pano)
             H_body_pano[:3, :3] = H_body_pano_rot
             H_body_pano[:3, 3] = H_body_pano_trans
             H_body_pano[3, 3] = 1
-        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-            rospy.logwarn("For timestamp, " + current_timestamp + ", cannot find TF from " + process_cloud_node_object.range_image_frame +
-                          " to " + process_cloud_node_object.undistorted_cloud_frame + ", skipping this point cloud.")
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+            process_cloud_node_object.get_logger().warn(
+                "Cannot find TF from " + process_cloud_node_object.range_image_frame +
+                " to " + process_cloud_node_object.undistorted_cloud_frame + ", skipping this point cloud.")
             return None, None
 
         points_body_xyz_homg = (np.linalg.pinv(
@@ -256,18 +274,32 @@ def transform_publish_pc(process_cloud_node_object, current_timestamp, pc_xyzi_t
     return points_world_xyzi, points_body_xyzi
 
 
+def _make_transform_stamped(stamp, parent_frame, child_frame, translation, rotation):
+    t = TransformStamped()
+    t.header.stamp = stamp
+    t.header.frame_id = parent_frame
+    t.child_frame_id = child_frame
+    t.transform.translation.x = float(translation[0])
+    t.transform.translation.y = float(translation[1])
+    t.transform.translation.z = float(translation[2])
+    t.transform.rotation.x = float(rotation[0])
+    t.transform.rotation.y = float(rotation[1])
+    t.transform.rotation.z = float(rotation[2])
+    t.transform.rotation.w = float(rotation[3])
+    return t
+
+
 def send_tfs(process_cloud_node_object, msg):
 
     # send the transform from the camera_init (faster-lio's world frame) to our world frame (odom)
     process_cloud_node_object.odom_broadcaster.sendTransform(
-        (0, 0, 0),
-        (0, 0, 0, 1),
-        msg.header.stamp,
-        process_cloud_node_object.faster_lio_world_frame,
-        # If using LLOL's ouster driver, frame is rotated by 180 degrees
-        process_cloud_node_object.reference_frame
-    )
-    
+        _make_transform_stamped(
+            msg.header.stamp,
+            process_cloud_node_object.reference_frame,
+            process_cloud_node_object.faster_lio_world_frame,
+            (0, 0, 0),
+            (0, 0, 0, 1)))
+
     if process_cloud_node_object.run_kitti:
         # publish odom as tf between faster_lio_world_frame and range_image_frame
         # extract the rotation and translation from the odom message
@@ -293,7 +325,7 @@ def send_tfs(process_cloud_node_object, msg):
         # # extract the rotation and translation from the inverted transformation matrix
         # t = H_lidar_world[:3, 3]
         # q = R.from_matrix(H_lidar_world[:3, :3]).as_quat()
-        # rospy.logwarn_throttle(5, "RUNNING KITTI BENCHMARK!")
+        # node.get_logger().warn("RUNNING KITTI BENCHMARK!", throttle_duration_sec=5)
 
         # # # get the transformation matrix
         # # H = np.eye(4)
@@ -316,49 +348,49 @@ def send_tfs(process_cloud_node_object, msg):
         t = H[:3, 3]
         q = R.from_matrix(H[:3, :3]).as_quat()
         process_cloud_node_object.odom_broadcaster.sendTransform(
-            t,
-            q,
-            msg.header.stamp,
-            process_cloud_node_object.range_image_frame,
-            process_cloud_node_object.faster_lio_world_frame
-        )
+            _make_transform_stamped(
+                msg.header.stamp,
+                process_cloud_node_object.faster_lio_world_frame,
+                process_cloud_node_object.range_image_frame,
+                t,
+                q))
 
     # publish the odometry message
     odom_msg = msg
     process_cloud_node_object.odom_pub.publish(odom_msg)
 
     process_cloud_node_object.odom_broadcaster.sendTransform(
-        (0, 0, 0),
-        # for LLOL's ouster driver use (0 0 1 0), and for original ouster driver use (0 0 0 1)
-        (0, 0, 0, 1),
-        msg.header.stamp,
-        "os_sensor",
-        process_cloud_node_object.range_image_frame
-    )
+        _make_transform_stamped(
+            msg.header.stamp,
+            process_cloud_node_object.range_image_frame,
+            "os_sensor",
+            (0, 0, 0),
+            # for LLOL's ouster driver use (0 0 1 0), and for original ouster driver use (0 0 0 1)
+            (0, 0, 0, 1)))
 
     process_cloud_node_object.odom_broadcaster.sendTransform(
-        (0, 0, 0),
-        (0, 0, 0, 1),
-        msg.header.stamp,
-        process_cloud_node_object.undistorted_cloud_frame,
-        "os_sensor"
-    )
+        _make_transform_stamped(
+            msg.header.stamp,
+            "os_sensor",
+            process_cloud_node_object.undistorted_cloud_frame,
+            (0, 0, 0),
+            (0, 0, 0, 1)))
 
     process_cloud_node_object.odom_broadcaster.sendTransform(
-        (0, 0, 0),
-        (0, 0, 0, 1),
-        msg.header.stamp,
-        "quadrotor/odom",
-        "quadrotor/map"
-    )
+        _make_transform_stamped(
+            msg.header.stamp,
+            "quadrotor/map",
+            "quadrotor/odom",
+            (0, 0, 0),
+            (0, 0, 0, 1)))
 
     process_cloud_node_object.odom_broadcaster.sendTransform(
-        (0, 0, 0),
-        (0, 0, 0, 1),
-        msg.header.stamp,
-        "quadrotor/map",
-        process_cloud_node_object.reference_frame
-    )
+        _make_transform_stamped(
+            msg.header.stamp,
+            process_cloud_node_object.reference_frame,
+            "quadrotor/map",
+            (0, 0, 0),
+            (0, 0, 0, 1)))
 
 
 def publish_accumulated_cloud(process_cloud_node_object, timestamp):
@@ -377,7 +409,9 @@ def publish_accumulated_cloud(process_cloud_node_object, timestamp):
         np.float32)
     pc_msg.data = full_data.tobytes()
     process_cloud_node_object.accumulated_cloud_pub.publish(pc_msg)
-    rospy.loginfo_throttle(5, "Accumulated semantic point cloud published")
+    process_cloud_node_object.get_logger().info(
+        "Accumulated semantic point cloud published",
+        throttle_duration_sec=5)
 
 
 def make_fields():
