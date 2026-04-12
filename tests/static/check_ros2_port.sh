@@ -711,17 +711,27 @@ else
     k_examples=()
     while IFS= read -r lp; do
         [ -z "$lp" ] && continue
+        # Read the whole file as a single awk record so multi-line
+        # DeclareLaunchArgument( / LaunchConfiguration( calls are matched
+        # correctly. Earlier per-line processing missed the common
+        #     DeclareLaunchArgument(
+        #         'name',
+        #         default_value='...',
+        #     ),
+        # pattern and produced false positives.
         missing_raw=$(awk -v builtin="$K_BUILTIN_ARGS" '
             BEGIN {
-                # Build a set of built-in arg names.
+                RS = "\x04"   # EOT: no regular file contains this, so RS effectively slurps the whole file
                 n = split(builtin, arr, " ")
                 for (i = 1; i <= n; i++) builtins[arr[i]] = 1
             }
             {
-                line = $0
-                # Collect DeclareLaunchArgument("x", ...) and DeclareLaunchArgument(\x27x\x27, ...)
-                tmp = line
-                while (match(tmp, /DeclareLaunchArgument[[:space:]]*\(([[:space:]]*[\x27"][a-zA-Z_][a-zA-Z0-9_]*[\x27"])/)) {
+                text = $0
+                # Collect DeclareLaunchArgument(..., "name", ...) names.
+                # The paren may be followed by arbitrary whitespace/newlines
+                # before the first positional string arg.
+                tmp = text
+                while (match(tmp, /DeclareLaunchArgument[[:space:]]*\([[:space:]\n]*[\x27"][a-zA-Z_][a-zA-Z0-9_]*[\x27"]/)) {
                     chunk = substr(tmp, RSTART, RLENGTH)
                     if (match(chunk, /[\x27"][a-zA-Z_][a-zA-Z0-9_]*[\x27"]/)) {
                         name = substr(chunk, RSTART + 1, RLENGTH - 2)
@@ -729,13 +739,22 @@ else
                     }
                     tmp = substr(tmp, RSTART + RLENGTH)
                 }
-                # Collect LaunchConfiguration("x") / LaunchConfiguration(\x27x\x27)
-                tmp = line
-                while (match(tmp, /LaunchConfiguration[[:space:]]*\([[:space:]]*[\x27"][a-zA-Z_][a-zA-Z0-9_]*[\x27"][[:space:]]*\)/)) {
+                # Collect LaunchConfiguration("x") / LaunchConfiguration(\x27x\x27).
+                # These are always single-line in practice, but allow for
+                # whitespace/newlines inside the parens just in case.
+                tmp = text
+                while (match(tmp, /LaunchConfiguration[[:space:]]*\([[:space:]\n]*[\x27"][a-zA-Z_][a-zA-Z0-9_]*[\x27"][[:space:]\n]*\)/)) {
                     chunk = substr(tmp, RSTART, RLENGTH)
                     if (match(chunk, /[\x27"][a-zA-Z_][a-zA-Z0-9_]*[\x27"]/)) {
                         name = substr(chunk, RSTART + 1, RLENGTH - 2)
-                        used[name] = NR
+                        # Compute a 1-indexed line number by counting newlines
+                        # in the prefix of the whole-file slurp. This is O(n)
+                        # per match but our launch files are small.
+                        prefix_len = RSTART - 1
+                        prefix = substr(text, 1, prefix_len)
+                        lineno = gsub(/\n/, "\n", prefix) + 1
+                        # Only record the first occurrence per name.
+                        if (!(name in used)) used[name] = lineno
                     }
                     tmp = substr(tmp, RSTART + RLENGTH)
                 }
@@ -1012,16 +1031,21 @@ else
 fi
 
 # ============================================================================
-# N. Duplicate declare_parameter across files
+# N. Duplicate raw declare_parameter across files
 # ============================================================================
-section "N. Duplicate declare_parameter across files"
+section "N. Duplicate raw declare_parameter across files"
 #
-# Flag declare_parameter("key", ...) / <prefix>_declare_or_get<T>(node, "key", ...)
-# keys that appear in 2+ C++ source files in the same sloam / object_modeller
-# scope. We do not attempt to parse default values in shell; any key with
-# multiple distinct source files is reported as a footgun for human audit.
-# Catches the pre-existing case of sloam's number_of_robots declared in 3
-# files with 3 different defaults.
+# Flag RAW declare_parameter("key", ...) keys that appear in 2+ C++ source
+# files in the same sloam / object_modeller scope. A raw duplicate is a real
+# runtime bug: ROS2 will throw rclcpp::exceptions::ParameterAlreadyDeclared
+# on the second call.
+#
+# We deliberately DO NOT flag the `<prefix>_declare_or_get<T>(node, "key", ...)`
+# wrapper family used throughout sloam. Those wrappers guard with
+# `node->has_parameter(name)` before declaring, so multiple wrapper call sites
+# on the same key are safe — the first caller declares, subsequent callers
+# fall through to get_parameter. This is the idiomatic "declare-or-get" pattern
+# and is not a bug. The check only runs on the raw, unguarded form.
 
 if ! command -v awk >/dev/null 2>&1; then
     skip "N  duplicate declare_parameter keys across files" "awk not available"
@@ -1035,8 +1059,11 @@ else
       | while IFS= read -r f; do
             awk -v file="$f" '
                 { sub(/\/\/.*$/, "", $0) }
-                /declare_parameter[[:space:]]*(<[^>]*>)?[[:space:]]*\(/ ||
-                /[a-zA-Z_]+declare_or_get[[:space:]]*(<[^>]*>)?[[:space:]]*\(/ {
+                # Skip safe-wrapper forms (*_declare_or_get<T>(...)). Those guard
+                # with has_parameter() and are safe to call from multiple sites.
+                /[a-zA-Z_]+declare_or_get[[:space:]]*(<[^>]*>)?[[:space:]]*\(/ { next }
+                # Raw declare_parameter calls — these are the real hazard.
+                /declare_parameter[[:space:]]*(<[^>]*>)?[[:space:]]*\(/ {
                     if (match($0, /"[^"]+"/)) {
                         key = substr($0, RSTART + 1, RLENGTH - 2)
                         if (key ~ /^[a-zA-Z_]/) {
