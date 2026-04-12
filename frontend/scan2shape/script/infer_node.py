@@ -25,9 +25,12 @@ class Inference(Node):
         self.declare_parameter("pc_range_threshold", 20)
         self.declare_parameter("out_of_range_default_position", [0.0, 0.0, 0.0])
         self.declare_parameter("pc_point_step", 16)
-        self.declare_parameter(
-            "model_dir",
-            "/home/sam/semantic-segmentation/lidar-bonnetal/pennovation-darknet-smallest/")
+        # REQUIRED: path to the RangeNet++ semantic-segmentation model
+        # directory. There is no sensible default — pass it via launch
+        # argument or via infer_node_params.yaml. Example:
+        #     ros2 run scan2shape_launch infer_node.py --ros-args \
+        #         -p model_dir:=/path/to/pennovation-darknet-smallest/
+        self.declare_parameter("model_dir", "")
         self.declare_parameter("namespace", "/os_node")
         self.declare_parameter("gpu", True)
 

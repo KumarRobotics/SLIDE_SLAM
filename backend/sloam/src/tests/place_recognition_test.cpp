@@ -1,6 +1,7 @@
 #include <place_recognition.h>
 #include <rclcpp/rclcpp.hpp>
 
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -10,8 +11,19 @@
 
 // Either use randomly generated objects or load objects from your own test data
 bool use_generated_objects = false;
-std::string file_path_robot0 = "/home/sam/slideslam_ws/src/SLIDE_SLAM/backend/sloam/clipper_semantic_object/examples/data/robot0Map_indoor.txt";
-std::string file_path_robot1 = "/home/sam/slideslam_ws/src/SLIDE_SLAM/backend/sloam/clipper_semantic_object/examples/data/robot1Map_indoor.txt";
+
+// Test-data directory resolution. Override via the SLIDESLAM_TEST_DATA_DIR
+// environment variable. The default is relative to the sloam source directory
+// (backend/sloam/); cd there before running this test, or export
+// SLIDESLAM_TEST_DATA_DIR=/absolute/path/to/data. The clipper_semantic_object
+// examples data is bundled in the source tree but not installed to share/.
+static const std::string _test_data_dir = []() {
+  const char* env = std::getenv("SLIDESLAM_TEST_DATA_DIR");
+  return env ? std::string(env)
+             : std::string("clipper_semantic_object/examples/data");
+}();
+std::string file_path_robot0 = _test_data_dir + "/robot0Map_indoor.txt";
+std::string file_path_robot1 = _test_data_dir + "/robot1Map_indoor.txt";
 bool visualize_matching_results = true;
 
 std::vector<Eigen::Vector7d> generateObjects() {
