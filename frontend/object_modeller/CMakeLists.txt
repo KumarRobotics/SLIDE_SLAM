@@ -62,8 +62,10 @@ install(TARGETS ${PROJECT_NAME}_cylinder
 )
 
 # ---- Python nodes ----
-
-ament_python_install_package(${PROJECT_NAME})
+# Note: no ament_python_install_package call here — this package does not
+# ship an importable Python package directory (there is no
+# frontend/object_modeller/object_modeller/__init__.py). All Python nodes
+# are standalone scripts installed as executables below.
 
 install(PROGRAMS
   script/cylinder_plane_modeller.py

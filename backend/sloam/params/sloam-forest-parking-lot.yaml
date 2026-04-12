@@ -1,6 +1,5 @@
 /**:
   ros__parameters:
-    enable_rviz: true
     # ------- MOST IMPORTANT PARAMS TO TUNE: -------
     use_slidematch: true # VERY IMPORANT: place recognition algorithm choice, if true, use slidematch, if false, use slidegraph
     communication_wait_time: 5.0 # when running multi-robot bags, intermittent communication is replicated by allowing them to share information every communication_wait_time seconds
