@@ -1,4 +1,4 @@
-Header header
+std_msgs/Header header
 sensor_msgs/PointCloud2 cloud
 nav_msgs/Odometry odom
 # This message contains the synced odometry with the point cloud

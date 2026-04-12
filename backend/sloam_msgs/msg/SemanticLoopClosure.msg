@@ -1,6 +1,6 @@
-Header header
+std_msgs/Header header
 # VIO raw odometry
-nav_msgs/Odometry vio_odom 
+nav_msgs/Odometry vio_odom
 # factor graph estimated pose
 nav_msgs/Odometry corrected_odom
 # history key pose index for loop closure

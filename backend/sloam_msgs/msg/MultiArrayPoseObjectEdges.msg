@@ -1,3 +1,3 @@
-int32 robotID
-string objectType
-poseObjectEdges[] multiArrayEdges
+int32 robot_id
+string object_type
+sloam_msgs/PoseObjectEdges[] multi_array_edges

@@ -1,18 +1,18 @@
 # Action goal
-Header header
+std_msgs/Header header
 geometry_msgs/Point[] submap
 # The loop closure server should use this list of semantic objects to find closure
 ---
 # Action result
-Header header
+std_msgs/Header header
 bool success
 bool killed
 int32 status # by default it is 0. If success=false, check status
 # status=1 for not enough measurements
-# status=2 for Sync time failed 
+# status=2 for Sync time failed
 # status=3 for residual too large
 sloam_msgs/SemanticLoopClosure loop_closure_msg
 ---
 # Action feedback
-Header header
-duration computation_time
+std_msgs/Header header
+builtin_interfaces/Duration computation_time

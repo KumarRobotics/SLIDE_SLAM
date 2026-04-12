@@ -1,1 +1,1 @@
-float64[7] labelXYZ 
+float64[7] label_xyz

@@ -1,18 +1,18 @@
 # Action goal
-Header header
+std_msgs/Header header
 std_msgs/UInt64 key_pose_idx
 geometry_msgs/Point[] submap
 # The loop closure server should use this list of semantic objects to find closure
 ---
 # Action result
-Header header
+std_msgs/Header header
 bool success
 bool killed
 nav_msgs/Odometry optimized_key_pose
 nav_msgs/Odometry vio_pose
-nav_msgs/Odometry relativeMotion # output of map merging: relative transform from optimized_key_pose to current pose (in factor graph) upon loop closure
+nav_msgs/Odometry relative_motion # output of map merging: relative transform from optimized_key_pose to current pose (in factor graph) upon loop closure
 nav_msgs/Odometry vio_to_sloam_pose
 ---
 # Action feedback
-Header header
-duration computation_time
+std_msgs/Header header
+builtin_interfaces/Duration computation_time

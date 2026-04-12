@@ -1,3 +1,3 @@
-int8 hostRobotID
-int8 targetRobotID
-geometry_msgs/Pose TFfromTarget2Host
+int8 host_robot_id
+int8 target_robot_id
+geometry_msgs/Pose tf_from_target_to_host

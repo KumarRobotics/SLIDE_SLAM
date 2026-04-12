@@ -1,3 +1,3 @@
-ROSCylinder[] treeModels
-sensor_msgs/PointCloud2 treeFeatures
-sensor_msgs/PointCloud2 groundFeatures
+ROSCylinder[] tree_models
+sensor_msgs/PointCloud2 tree_features
+sensor_msgs/PointCloud2 ground_features

@@ -1,4 +1,4 @@
-Header header
+std_msgs/Header header
 # bool add_factor # if is best action
 float64[] travel_distances # distance to travel
 uint64[] candidate_traj_pose_indices # candidate trajectory pose indices
