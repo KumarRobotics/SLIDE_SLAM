@@ -39,8 +39,9 @@ This repository contains the source code for the project SlideSLAM: Sparse, Ligh
 
 **Pull the docker image**: 
 ```
-docker pull xurobotics/slide-slam:latest
+docker pull xurobotics/slide-slam:ros2-jazzy
 ```
+_Note: the `ros2-jazzy` tag is a placeholder and may not yet be published on Docker Hub. Build it locally or update the tag once it is available._
 
 **Create the workspace (important)**
 ```
@@ -88,13 +89,14 @@ Then run:
 
 **Build the workspace**: 
 ```
+source /opt/ros/jazzy/setup.bash
 cd /opt/slideslam_docker_ws
-catkin build -DCMAKE_BUILD_TYPE=Release
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```
 
 **Run the demos**
 ```
-source /opt/slideslam_docker_ws/devel/setup.bash
+source /opt/slideslam_docker_ws/install/setup.bash
 ```
 Follow the instructions below to run the demos. Remember to commit your changes inside docker envirnoment to keep them (e.g. newly installed pkgs). 
 
@@ -102,11 +104,11 @@ Type `exit` to exit the container.
 
 You can re-enter the container, or enter the container from a new terminal by either 
 ```
-docker start slideslam_ros && docker exec -it slideslam_ros /bin/bash
+docker start slideslam_ros2 && docker exec -it slideslam_ros2 /bin/bash
 ``` 
 or remove your docker container using the command 
 ```
-docker rm slideslam_ros
+docker rm slideslam_ros2
 ``` 
 before you run the docker image again.
 
@@ -116,9 +118,9 @@ before you run the docker image again.
 
 # Build from source (only if you do not want to use docker)
 
-**Install ROS** (code currently only tested on Ubuntu 20.04 + ROS Noetic)
+**Install ROS2 Jazzy on Ubuntu 24.04**
 
-Please refer to this [link](https://wiki.ros.org/noetic/Installation/Ubuntu) for installing ROS Noetic
+Please refer to this [link](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debians.html) for installing ROS2 Jazzy Jalisco.
 
 **Create your workspace under your preferred directory** (e.g., we name this directory as `~/slideslam_ws`):
 ```
@@ -171,10 +173,9 @@ git clone https://github.com/fmtlib/fmt.git && \
 sudo make install
 ```
 
-**Install ros_numpy**:
-```
-sudo apt install ros-noetic-ros-numpy
-```
+**ros_numpy replacement**:
+
+`ros_numpy` is not available in ROS2; the `ros2_dev` branch provides local helpers that wrap `sensor_msgs_py.point_cloud2` instead. No extra package needs to be installed.
 
 **(Optional) Only if you need to run on LiDAR data, install Faster-LIO and LiDAR drivers**: 
 ```
@@ -194,12 +195,19 @@ pip install ultralytics==8.0.59
 
 **Install pip dependencies**:
 ```
-pip install numpy==1.22.3
+pip install "numpy>=1.24,<2.0"
 pip install scikit-learn
 pip install scipy
 pip install open3d
 pip install matplotlib
-pip install git+https://github.com/dimatura/pypcd.git
+pip install pypcd4
+pip install tf_transformations
+```
+_Note: Ubuntu 24.04 ships Python 3.12, which is incompatible with the old `numpy==1.22.3` pin used on the ROS1 branch — `numpy>=1.24,<2.0` is the supported range. The original `pypcd` from `dimatura/pypcd` is also broken on Python 3.12, so we use the maintained `pypcd4` fork instead. The Python nodes ported in this branch import `tf_transformations`, which is not part of the standard apt set._
+
+Also install the apt-distributed `tf_transformations` package alongside the pip version (Jazzy ships its own python package via apt):
+```
+sudo apt install ros-jazzy-tf-transformations
 ```
 
 - Install `tmux` for running our demo experiments
@@ -210,13 +218,13 @@ sudo apt install tmux
 
 **Build in release mode**
 ```
-source /opt/ros/noetic/setup.bash
+source /opt/ros/jazzy/setup.bash
 cd ~/slideslam_ws
-catkin build -DCMAKE_BUILD_TYPE=Release
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```
 **Source your workspace using**
 ```
-source ~/slideslam_ws/devel/setup.bash
+source ~/slideslam_ws/install/setup.bash
 ```
 
 
@@ -232,7 +240,7 @@ sudo rm -rf /usr/local/include/gtsam
 # Run our demos (with processed data)
 Note: if the access to any of the links is lost, please contact the authors, and we will provide the data from our lab's NAS.
 
-This section will guide you through running our demos with processed data. We provide processed data in the form of rosbags that contains only the odometry and semantic measurements (i.e. object observations). Running the entire pipeline containing object detection and the rest of SLAM for multiple robots simultaneously onboard one computer is computationally and memory intensive. 
+This section will guide you through running our demos with processed data. We provide processed data in the form of ROS2 bags that contain only the odometry and semantic measurements (i.e. object observations). Running the entire pipeline containing object detection and the rest of SLAM for multiple robots simultaneously onboard one computer is computationally and memory intensive. 
 
 **Note:** Such tests can to a large degree replicate what would happen onboard the robot since when you run real world multi-robot experiment, each robot will only be responsible for processing its own data, and the processed data shared by the other robots in the form provided by here. 
 
@@ -250,10 +258,10 @@ Please download the processed data bags from [this link](https://drive.google.co
 
 **Option 1:** Use our tmux script (recommended)
 
-Source and go to the ' folder inside `multi_robot_utils_launch` package:
+Source your workspace and go to the `script` folder inside the `multi_robot_utils_launch` package (using the source-tree path is more reliable than `ros2 pkg prefix`):
 ```
-source ~/slideslam_ws/devel/setup.bash
-roscd multi_robot_utils_launch/script
+source ~/slideslam_ws/install/setup.bash
+cd ~/slideslam_ws/src/SLIDE_SLAM/backend/multi_robot_utils_launch/script
 ```
 
 Modify `tmux_multi_robot_with_bags_forest.sh` to set the `BAG_DIR` to where you downloaded the bags
@@ -272,12 +280,12 @@ Finally, execute this script
 
 If you want to terminate this program, go to the last terminal window and press `Enter` to kill all the tmux sessions.
 
-**Option 2:** If you prefer not to use this tmux script, please refer to the `roslaunch` commands inside this tmux script and execute those commands by yourself.
+**Option 2:** If you prefer not to use this tmux script, please refer to the `ros2 launch` commands inside this tmux script and execute those commands by yourself.
 
 **To run the same above example with urban outdoor data, use the `tmux_multi_robot_with_bags_parking_lot.sh` script and repeat the above steps.**
 
 # Run on raw sensor data (RGBD or LiDAR bags)
-This section will guide you through running our code stack with raw sensor data, which is rosbags containing LiDAR-based or RGBD-based data. Note: size of these raw bags are usually anywhere from 10-100 GB.
+This section will guide you through running our code stack with raw sensor data, which is ROS2 bags (`ros2 bag` format) containing LiDAR-based or RGBD-based data. Note: size of these raw bags are usually anywhere from 10-100 GB. If your data is in legacy ROS1 `.bag` format you can convert it with [`rosbags-convert`](https://gitlab.com/ternaris/rosbags) before playing it back.
 
 ## Download example data
 
@@ -293,10 +301,10 @@ Please download our trained RangeNet++ model from [this link](https://drive.goog
 
 **Option 1:** Use our tmux script (recommended)
 
-Source and go to the ' folder inside `multi_robot_utils_launch` package:
+Source your workspace and go to the `script` folder inside the `multi_robot_utils_launch` package (using the source-tree path is more reliable than `ros2 pkg prefix`):
 ```
-source ~/slideslam_ws/devel/setup.bash
-roscd multi_robot_utils_launch/script
+source ~/slideslam_ws/install/setup.bash
+cd ~/slideslam_ws/src/SLIDE_SLAM/backend/multi_robot_utils_launch/script
 ```
 
 Modify `tmux_single_indoor_robot.sh` to set the `BAG_DIR` to where you downloaded the bags
@@ -318,7 +326,7 @@ Finally, if you want to use Yolo-v8, execute this script
 
 If you want to terminate this program, go to the last terminal window and press `Enter` to kill all the tmux sessions.
 
-**Option 2:** If you prefer not to use this tmux script, please refer to the `roslaunch` commands inside this tmux script and execute those commands by yourself, or using the detailed instructions found [here](https://github.com/XuRobotics/SLIDE_SLAM/wiki#run-rgbd-raw-bags-detailed-instructions).
+**Option 2:** If you prefer not to use this tmux script, please refer to the `ros2 launch` commands inside this tmux script and execute those commands by yourself, or using the detailed instructions found [here](https://github.com/XuRobotics/SLIDE_SLAM/wiki#run-rgbd-raw-bags-detailed-instructions).
 
 ## Run our LiDAR Data experiments
 
@@ -333,10 +341,10 @@ If you want to terminate this program, go to the last terminal window and press 
 
 Make sure you edit the ```infer_node_params.yaml``` file present inside the ```scan2shape_launch/config``` folder and set the value of ```model_dir``` param to point to the path to the RangeNet++ model you downloaded in the previous step. Make sure to compelte the path with the ```/``` at the end.
 
-Source and go to the ' folder inside `multi_robot_utils_launch` package:
+Source your workspace and go to the `script` folder inside the `multi_robot_utils_launch` package (using the source-tree path is more reliable than `ros2 pkg prefix`):
 ```
-source ~/slideslam_ws/devel/setup.bash
-roscd multi_robot_utils_launch/script
+source ~/slideslam_ws/install/setup.bash
+cd ~/slideslam_ws/src/SLIDE_SLAM/backend/multi_robot_utils_launch/script
 ```
 
 Modify `tmux_single_outdoor_robot.sh` to set the `BAG_DIR` to where you downloaded the bags
@@ -355,16 +363,16 @@ Finally, execute this script
 
 If you want to terminate this program, go to the last terminal window and press `Enter` to kill all the tmux sessions.
 
-**Option 2:** If you prefer not to use this tmux script, please refer to the `roslaunch` commands inside this tmux script and execute those commands by yourself, or using the detailed instructions found [here](https://github.com/XuRobotics/SLIDE_SLAM/wiki#run-lidar-raw-bags-detailed-instructions).
+**Option 2:** If you prefer not to use this tmux script, please refer to the `ros2 launch` commands inside this tmux script and execute those commands by yourself, or using the detailed instructions found [here](https://github.com/XuRobotics/SLIDE_SLAM/wiki#run-lidar-raw-bags-detailed-instructions).
 
 ## Run KITTI Benchmark experiments
 
 **Option 1:** Use our tmux script
 
-Source and go to the ' folder inside `multi_robot_utils_launch` package:
+Source your workspace and go to the `script` folder inside the `multi_robot_utils_launch` package (using the source-tree path is more reliable than `ros2 pkg prefix`):
 ```
-source ~/slideslam_ws/devel/setup.bash
-roscd multi_robot_utils_launch/script
+source ~/slideslam_ws/install/setup.bash
+cd ~/slideslam_ws/src/SLIDE_SLAM/backend/multi_robot_utils_launch/script
 ```
 
 Modify `tmux_single_outdoor_kitti.sh` to set the `BAG_DIR` to where you downloaded the bags
