@@ -111,7 +111,7 @@ def publish_cylinder_cloud(pc_fields, cylinder_cloud, timestamp, frame_id, pc_wi
     pc_msg = PointCloud2()
     # define our own header to publish in the world frame
     header = Header()
-    header.stamp = timestamp  # rospy.Time.now()
+    header.stamp = timestamp
     header.frame_id = frame_id
     pc_msg.header = header
     pc_msg.width = pc_width
@@ -128,7 +128,7 @@ def publish_ground_cloud(pc_fields, ground_cloud, timestamp, frame_id, pc_height
     pc_msg = PointCloud2()
     # define our own header to publish in the world frame
     header = Header()
-    header.stamp = timestamp  # rospy.Time.now()
+    header.stamp = timestamp
     header.frame_id = frame_id
     pc_msg.header = header
     pc_msg.height = pc_height
@@ -397,7 +397,7 @@ def publish_accumulated_cloud(process_cloud_node_object, timestamp):
     pc_msg = PointCloud2()
     # define our own header to publish in the world frame
     header = Header()
-    header.stamp = timestamp  # rospy.Time.now()
+    header.stamp = timestamp
     header.frame_id = process_cloud_node_object.reference_frame
     pc_msg.header = header
     pc_msg.width = process_cloud_node_object.accumulated_semantic_cloud.shape[0]

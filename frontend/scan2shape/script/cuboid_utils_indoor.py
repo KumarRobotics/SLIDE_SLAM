@@ -49,7 +49,7 @@ def generate_publish_instance_cloud_indoor(process_cloud_node_object, timestamp)
         pc_msg_2 = PointCloud2()
         # define our own header to publish in the world frame
         header = Header()
-        header.stamp = timestamp  # rospy.Time.now()
+        header.stamp = timestamp
         header.frame_id = process_cloud_node_object.reference_frame
         pc_msg_2.header = header
         pc_msg_2.width = valid_points_labels.shape[0]

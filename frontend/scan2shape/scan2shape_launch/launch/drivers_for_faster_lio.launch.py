@@ -1,9 +1,9 @@
 """ROS2 launch file: ouster driver setup intended for faster_lio.
 
-NOTE: This launch ports the original ROS1 launch one-to-one. The referenced
-ouster_ros executables (``os_cloud_node``, ``relay``) and the decoder include
-target need to exist in the corresponding ROS2 packages for this launch to
-work.
+(ROS1 legacy note) This launch ports the original launch one-to-one. The
+referenced ouster_ros executables (``os_cloud_node``, ``relay``) and the
+decoder include target need to exist in the corresponding ament packages
+for this launch to work.
 """
 
 from launch import LaunchDescription

@@ -295,7 +295,7 @@ def publish_markers(process_cloud_node, all_tracks, cur_cls_name=None, height=1.
 
         # cov_marker = Marker()
         # cov_marker.header.frame_id = "quadrotor/map"
-        # cov_marker.header.stamp = rospy.Time.now()
+        # cov_marker.header.stamp = self.get_clock().now().to_msg()
         # cov_marker.ns = "covariance"
         # cov_marker.id = i
         # cov_marker.type = Marker.SPHERE

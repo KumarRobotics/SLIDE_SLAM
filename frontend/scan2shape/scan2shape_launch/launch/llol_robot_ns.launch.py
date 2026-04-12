@@ -1,8 +1,8 @@
 """ROS2 launch file: LLOL odometry node namespaced under os_node.
 
-NOTE: Ports the original ROS1 launch one-to-one. The referenced ``llol``
-package and its ``sv_node_llol`` executable / config yaml must exist in the
-corresponding ROS2 packages for this launch to work.
+(ROS1 legacy note) Ports the original launch one-to-one. The referenced
+``llol`` package and its ``sv_node_llol`` executable / config yaml must
+exist in the corresponding ament packages for this launch to work.
 """
 
 from launch import LaunchDescription

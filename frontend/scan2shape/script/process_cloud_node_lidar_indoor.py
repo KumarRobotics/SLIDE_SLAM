@@ -33,14 +33,15 @@ from rclpy.node import Node
 import tf2_ros
 from tf2_ros import TransformListener, Buffer, TransformBroadcaster
 
-# NOTE: This module is broken upstream — it imports several helpers from
-# utils_outdoor / cuboid_utils_indoor that do not exist there even in the
-# original ROS1 source tree (publish_tree_cloud, publish_ground_cloud_and_fake_cubes,
-# publish_cuboid_and_range_bearing_measurements{,_with_models,_by_floor*}). Those
-# call sites are commented out below or guarded by feature flags so the module
-# loads, but the imports themselves are kept disabled with try/except to allow
-# this node to start. Fixing the missing helpers is outside the scope of the
-# ROS1->ROS2 conversion.
+# (ROS1 legacy note) This module is broken upstream — it imports several
+# helpers from utils_outdoor / cuboid_utils_indoor that do not exist there
+# even in the original source tree (publish_tree_cloud,
+# publish_ground_cloud_and_fake_cubes,
+# publish_cuboid_and_range_bearing_measurements{,_with_models,_by_floor*}).
+# Those call sites are commented out below or guarded by feature flags so
+# the module loads, but the imports themselves are kept disabled with
+# try/except to allow this node to start. Fixing the missing helpers is
+# outside the scope of the ROS2 port.
 from utils_outdoor import (
     show_clusters,
     publish_ground_cloud,
@@ -443,7 +444,7 @@ class ProcessCloudNode(Node):
 
         if points_world_xyzi is None or points_body_xyzi is None:
             print("failed to find transform, skipping this cloud (see error msg above for exact failed tf)... ")
-            print("if you are replying bags, try setting /use_sim_time to true and add --clock flag to rosbag play")
+            print("if you are replaying bags, try passing -p use_sim_time:=true to this node and add --clock to ros2 bag play")
             print("it may also be caused by that your laptop struggles to run real time, play bag with slower rate")
 
         else:

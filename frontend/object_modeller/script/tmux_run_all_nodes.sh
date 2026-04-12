@@ -19,7 +19,7 @@ else
   exit
 fi
 
-SETUP_ROS_STRING="source ~/xmas_slam_ws/devel/setup.bash; export ROS_MASTER_URI=http://localhost:11311"
+SETUP_ROS_STRING="source /opt/ros/jazzy/setup.bash; source ~/xmas_slam_ws/install/setup.bash"
 
 # Python args
 ODOM_TOPIC="/dragonfly67/quadrotor_ukf/control_odom"
@@ -36,38 +36,38 @@ tmux setw -g mouse on
 
 
 tmux rename-window -t $SESSION_NAME "Core"
-tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; roscore" Enter
+tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; echo 'ROS2: no roscore needed'" Enter
 tmux split-window -t $SESSION_NAME
-tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 1; rosparam set /use_sim_time True" Enter 
+tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 1; echo '[ROS2: /use_sim_time must be passed per-node via --ros-args -p use_sim_time:=true]'" Enter
 
 
 
 tmux new-window -t $SESSION_NAME -n "Bag"
-# tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; rosbag play --clock /home/sam/bags/pennovation-bags/generic_sloam_2_robots_multi_robot_MOST_IMPORTANT_2022-06-30-22-50-33.bag -s 30"
-tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; rosbag play --clock /home/sam/bags/xmas-slam-bags/test-indoor-sloam-and-SLC-cylinder-odom-only-bag-2023-10-26-17-58-19.bag -s 30"
+# tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; ros2 bag play --clock /home/sam/bags/pennovation-bags/generic_sloam_2_robots_multi_robot_MOST_IMPORTANT_2022-06-30-22-50-33.bag -s 30"
+tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; ros2 bag play --clock /home/sam/bags/xmas-slam-bags/test-indoor-sloam-and-SLC-cylinder-odom-only-bag-2023-10-26-17-58-19.bag -s 30"
 tmux split-window -t $SESSION_NAME
-tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; rosparam get /use_sim_time; python ./merge_synced_measurements.py" Enter
+tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; echo '[ROS2: use_sim_time is per-node]'; python3 ./merge_synced_measurements.py" Enter
 tmux select-layout -t $SESSION_NAME tiled
 
 
 
 tmux new-window -t $SESSION_NAME -n "Main"
-tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; python ./cylinder_plane_modeller.py --point_cloud_ns $POINT_CLOUD_NS" Enter
+tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; python3 ./cylinder_plane_modeller.py --point_cloud_ns $POINT_CLOUD_NS" Enter
 tmux split-window -t $SESSION_NAME
-tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; python ./sync_cylinder_odom.py --odom_topic $ODOM_TOPIC" Enter
+tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; python3 ./sync_cylinder_odom.py --odom_topic $ODOM_TOPIC" Enter
 tmux split-window -t $SESSION_NAME
-tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; python ./sync_cuboid_odom.py --odom_topic $ODOM_TOPIC" Enter
+tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; python3 ./sync_cuboid_odom.py --odom_topic $ODOM_TOPIC" Enter
 tmux split-window -t $SESSION_NAME
-tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; python ./sync_centroid_odom.py --odom_topic $ODOM_TOPIC" Enter
+tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; python3 ./sync_centroid_odom.py --odom_topic $ODOM_TOPIC" Enter
 tmux select-layout -t $SESSION_NAME tiled
 
 # Add window to easily kill all processes
 tmux new-window -t $SESSION_NAME -n "rviz"
-tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; rviz -d ../rviz/object_modeller.rviz"
+tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; rviz2 -d ../rviz/object_modeller.rviz"
 
 # sloam
 tmux new-window -t $SESSION_NAME -n "sloam"
-tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; roslaunch sloam single_robot_sloam_test.launch"
+tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; ros2 launch sloam single_robot_sloam_test.launch.py"
 
 
 # Add window to easily kill all processes

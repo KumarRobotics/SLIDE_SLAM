@@ -416,7 +416,7 @@ If you want to terminate this program, go to the last terminal window and press 
 - When running on your own data, we recommend to throttle the segmentation topic (segmented point cloud or images) rate to 2-4 Hz to avoid computation delay in the front end, especially if you’re experiencing performance issues at higher rates. Please also update the `expected_segmentation_frequency` parameter in the corresponding `process_cloud_node_*_params.yaml` file as well as the `desired_frequency` in the `infer_node_params.yaml` to the actual rate of the topic. 
 
 # Acknowledgement
-We use GTSAM as the backend. We thank [Guilherme Nardari](linkedin.com/in/guilherme-nardari-23ba91a8) for his contributions to this repository. 
+We use GTSAM as the backend. We thank [Guilherme Nardari](https://linkedin.com/in/guilherme-nardari-23ba91a8) for his contributions to this repository. 
 
 # Citation
 If you find our system or any of its modules useful for your academic work, we would appreciate it if you could cite our work as follows:

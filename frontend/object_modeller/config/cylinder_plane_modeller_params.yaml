@@ -1,7 +1,7 @@
 # This YAML file contains the parameters for the cylinder_plane_modeller.py script
 # which is used to fit cylinders and plane models to tree trunks and ground respectively.
 
-cylidner_plane_modeller:
+/**:
   ros__parameters:
     #--------------IMPORTANT PARAMETERS----------------
     # The angle of the cylinder axis ray compared to the ground plane.

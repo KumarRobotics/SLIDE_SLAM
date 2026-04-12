@@ -33,4 +33,3 @@
     time_to_delete_lost_track_cuboid: 30
     # save figures of object clustering results from DBSCAN
     visualize_DBSCAN_results: false
-    output_dir_to_save_figs: "./"

@@ -24,7 +24,6 @@ def generate_launch_description():
         namespace=robot_name,
         output="screen",
         parameters=[{
-            "sim": False,
             "desired_rate": 2.0,
             "confidence_threshold": 0.4,
             "rgb_topic": "camera/color/image_raw/",

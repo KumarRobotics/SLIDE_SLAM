@@ -1,9 +1,9 @@
 """ROS2 launch file for the simulator odometry perturbation node.
 
-NOTE: The original ROS1 .launch referenced ``add_noise_to_ground_truth_odom.py``
-which does not exist in this package's script/ directory. This launch file is
-preserved for parity but will fail at startup until the script is added back
-to the package.
+(ROS1 legacy note) The original .launch referenced
+``add_noise_to_ground_truth_odom.py`` which does not exist in this
+package's script/ directory. This launch file is preserved for parity but
+will fail at startup until the script is added back to the package.
 """
 
 from launch import LaunchDescription

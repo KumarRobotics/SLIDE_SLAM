@@ -26,7 +26,7 @@ import message_filters
 
 class CylinderPlaneModeller(Node):
     def __init__(self, args):
-        super().__init__("cylidner_plane_modeller")
+        super().__init__("cylinder_plane_modeller")
 
         self.synced_tree_and_ground_clouds = None
         # make subcriber with queue size 1

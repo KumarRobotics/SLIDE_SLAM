@@ -1,8 +1,9 @@
 """ROS2 launch file: ouster decoder driver.
 
-NOTE: Ports the original ROS1 launch one-to-one. The referenced
+(ROS1 legacy note) Ports the original launch one-to-one. The referenced
 ``ouster_decoder`` package and its ``ouster_driver`` executable / decoder
-launch must exist in the corresponding ROS2 packages for this launch to work.
+launch must exist in the corresponding ament packages for this launch to
+work.
 """
 
 from launch import LaunchDescription
