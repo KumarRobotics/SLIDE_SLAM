@@ -684,6 +684,404 @@ else
 fi
 
 # ============================================================================
+# K. Launch-argument consistency (within-file only)
+# ============================================================================
+section "K. Launch-argument consistency"
+#
+# For every .launch.py: collect the set of LaunchConfiguration('x') strings and
+# the set of DeclareLaunchArgument('x', ...) strings. FAIL if any LaunchConfig
+# key is referenced without being declared in the SAME file.
+#
+# We don't follow IncludeLaunchDescription chains — that's hard to do in shell
+# and would produce false positives for args that are declared in a parent
+# launch file. The within-file check catches typos like
+# LaunchConfiguration('robot_namee') when the arg was declared as 'robot_name'.
+#
+# ROS2 injects a handful of launch-level variables that are always available
+# (log_level, launch_prefix, etc.). Treat those as pre-declared.
+
+if ! command -v awk >/dev/null 2>&1; then
+    skip "K  launch-argument consistency" "awk not available"
+else
+    # Known well-known launch-level variables that ROS2 / launch_ros injects.
+    K_BUILTIN_ARGS="launch_prefix log_level use_sim_time output_log_level launch_prefix_filter node_log_level"
+
+    k_total_missing=0
+    k_files_with_issues=0
+    k_examples=()
+    while IFS= read -r lp; do
+        [ -z "$lp" ] && continue
+        missing_raw=$(awk -v builtin="$K_BUILTIN_ARGS" '
+            BEGIN {
+                # Build a set of built-in arg names.
+                n = split(builtin, arr, " ")
+                for (i = 1; i <= n; i++) builtins[arr[i]] = 1
+            }
+            {
+                line = $0
+                # Collect DeclareLaunchArgument("x", ...) and DeclareLaunchArgument(\x27x\x27, ...)
+                tmp = line
+                while (match(tmp, /DeclareLaunchArgument[[:space:]]*\(([[:space:]]*[\x27"][a-zA-Z_][a-zA-Z0-9_]*[\x27"])/)) {
+                    chunk = substr(tmp, RSTART, RLENGTH)
+                    if (match(chunk, /[\x27"][a-zA-Z_][a-zA-Z0-9_]*[\x27"]/)) {
+                        name = substr(chunk, RSTART + 1, RLENGTH - 2)
+                        declared[name] = 1
+                    }
+                    tmp = substr(tmp, RSTART + RLENGTH)
+                }
+                # Collect LaunchConfiguration("x") / LaunchConfiguration(\x27x\x27)
+                tmp = line
+                while (match(tmp, /LaunchConfiguration[[:space:]]*\([[:space:]]*[\x27"][a-zA-Z_][a-zA-Z0-9_]*[\x27"][[:space:]]*\)/)) {
+                    chunk = substr(tmp, RSTART, RLENGTH)
+                    if (match(chunk, /[\x27"][a-zA-Z_][a-zA-Z0-9_]*[\x27"]/)) {
+                        name = substr(chunk, RSTART + 1, RLENGTH - 2)
+                        used[name] = NR
+                    }
+                    tmp = substr(tmp, RSTART + RLENGTH)
+                }
+            }
+            END {
+                for (k in used) {
+                    if (!(k in declared) && !(k in builtins)) {
+                        printf "%s:%d\n", k, used[k]
+                    }
+                }
+            }
+        ' "$lp")
+        if [ -n "$missing_raw" ]; then
+            cnt=$(printf "%s\n" "$missing_raw" | wc -l | tr -d ' ')
+            k_total_missing=$((k_total_missing + cnt))
+            k_files_with_issues=$((k_files_with_issues + 1))
+            rel="${lp#$REPO_ROOT/}"
+            while IFS= read -r miss; do
+                [ -z "$miss" ] && continue
+                k_examples+=("$rel: LaunchConfiguration('${miss%%:*}') not declared (line ${miss##*:})")
+            done <<< "$missing_raw"
+        fi
+    done < <(find "$REPO_ROOT/backend" "$REPO_ROOT/frontend" -type f -name '*.launch.py' 2>/dev/null | grep -v '/tests/')
+
+    if [ "$k_total_missing" -eq 0 ]; then
+        pass "K  every LaunchConfiguration(x) has a matching DeclareLaunchArgument(x) in the same file"
+    else
+        fail "K  every LaunchConfiguration(x) has a matching DeclareLaunchArgument(x) in the same file" \
+            "$k_total_missing undeclared reference(s) across $k_files_with_issues file(s)"
+        if [ "$VERBOSE" = "1" ]; then
+            for e in "${k_examples[@]}"; do printf "         %s\n" "$e"; done
+        fi
+    fi
+fi
+
+# ============================================================================
+# L. Hardcoded user-specific absolute paths in source
+# ============================================================================
+section "L. Hardcoded user-specific absolute paths"
+#
+# Grep .cpp/.h/.hpp/.py under the main source roots for patterns that look
+# like hardcoded user-specific Linux paths. Comment-stripped. These break for
+# anyone except the original author — they should be configurable via
+# parameters or launch arguments.
+
+# The regex we search for. Use single pattern matched with ERE, then strip
+# comments, then re-match to survive false positives.
+L_PATTERN='/home/[a-z0-9_]+/|/opt/slideslam_docker_ws|/opt/bags/|/root/'
+
+l_search() {
+    # Collect source files from the given roots. Uses find + grep for
+    # robustness. Returns "file:line:text" records.
+    local roots=(
+        "$REPO_ROOT/backend/sloam/src"
+        "$REPO_ROOT/backend/sloam/include"
+        "$REPO_ROOT/frontend/object_modeller/src"
+        "$REPO_ROOT/frontend/object_modeller/include"
+        "$REPO_ROOT/frontend/object_modeller/script"
+        "$REPO_ROOT/frontend/object_modeller/object_detector_utils"
+        "$REPO_ROOT/frontend/scan2shape/script"
+        "$REPO_ROOT/frontend/scan2shape/scan2shape_launch/script"
+    )
+    if [ "$SEARCH_TOOL" = "rg" ]; then
+        rg -n --no-heading --color=never \
+            -g '*.cpp' -g '*.h' -g '*.hpp' -g '*.cc' -g '*.py' \
+            -g '!*.launch.py' \
+            -g '!backend/sloam/clipper_semantic_object/**' \
+            -e "$L_PATTERN" "${roots[@]}" 2>/dev/null || true
+    else
+        find "${roots[@]}" -type f \
+            \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' -o -name '*.cc' -o -name '*.py' \) \
+            2>/dev/null \
+            | grep -v '/clipper_semantic_object/' \
+            | grep -v '\.launch\.py$' \
+            | xargs -r grep -EnH "$L_PATTERN" 2>/dev/null || true
+    fi
+}
+
+l_raw="$(l_search)"
+if [ -z "$l_raw" ]; then
+    pass "L  no hardcoded user-specific absolute paths in source"
+else
+    # Split into cpp and py parts, strip comments, re-match.
+    l_cpp_part="$(printf "%s\n" "$l_raw" | grep -E '\.(cpp|h|hpp|cc):' || true)"
+    l_py_part="$(printf "%s\n" "$l_raw" | grep -E '\.py:' || true)"
+    l_cpp_clean="$(printf "%s\n" "$l_cpp_part" | strip_cpp_line_comments | grep -E "$L_PATTERN" || true)"
+    l_py_clean="$(printf "%s\n" "$l_py_part"  | strip_python_line_comments | grep -E "$L_PATTERN" || true)"
+    l_combined="$(printf "%s\n%s\n" "$l_cpp_clean" "$l_py_clean" | grep -v '^$' || true)"
+    if [ -z "$l_combined" ]; then
+        pass "L  no hardcoded user-specific absolute paths in source"
+    else
+        l_count=$(printf "%s\n" "$l_combined" | wc -l | tr -d ' ')
+        fail "L  no hardcoded user-specific absolute paths in source" "$l_count code-line hit(s)"
+        if [ "$VERBOSE" = "1" ]; then
+            printf "%s\n" "$l_combined" | head -10 | sed 's/^/         /'
+        fi
+    fi
+fi
+
+# ============================================================================
+# M. Launch Node(executable=...) resolves in target package
+# ============================================================================
+section "M. Launch Node executables resolve"
+#
+# For every .launch.py, extract every Node(..., package='x', executable='y')
+# call. For each pair where the package is one of our 5 managed packages,
+# verify that `y` matches either an add_executable() target or an
+# install(PROGRAMS ...) file basename in that package's CMakeLists.txt.
+# External packages (tf2_ros, topic_tools, rviz2, etc.) are SKIPPED.
+
+if ! command -v awk >/dev/null 2>&1; then
+    skip "M  launch Node executables resolve" "awk not available"
+else
+    # Map of managed package names to their CMakeLists.txt absolute path.
+    M_MANAGED_PKGS="sloam sloam_msgs multi_robot_utils_launch object_modeller scan2shape_launch"
+    # File lookup:
+    m_cml_sloam="$REPO_ROOT/backend/sloam/CMakeLists.txt"
+    m_cml_sloam_msgs="$REPO_ROOT/backend/sloam_msgs/CMakeLists.txt"
+    m_cml_multi_robot_utils_launch="$REPO_ROOT/backend/multi_robot_utils_launch/CMakeLists.txt"
+    m_cml_object_modeller="$REPO_ROOT/frontend/object_modeller/CMakeLists.txt"
+    m_cml_scan2shape_launch="$REPO_ROOT/frontend/scan2shape/scan2shape_launch/CMakeLists.txt"
+
+    # Build a list of "package:executable" valid entries from each managed
+    # package's CMakeLists.txt.
+    m_valid_entries_file=$(mktemp 2>/dev/null || printf '/tmp/m_valid_%d' $$)
+
+    m_collect_pkg_executables() {
+        local pkg="$1"
+        local cml="$2"
+        [ -f "$cml" ] || return 0
+        awk -v pkg="$pkg" '
+            BEGIN { in_install = 0 }
+            {
+                line = $0
+                sub(/#.*/, "", line)
+                # add_executable(name ...) — name is first token after the paren.
+                if (match(line, /add_executable[[:space:]]*\([[:space:]]*[A-Za-z_][A-Za-z0-9_]*/)) {
+                    chunk = substr(line, RSTART, RLENGTH)
+                    if (match(chunk, /[A-Za-z_][A-Za-z0-9_]*[[:space:]]*$/) || match(chunk, /[A-Za-z_][A-Za-z0-9_]*$/)) {
+                        name = substr(chunk, RSTART, RLENGTH)
+                        gsub(/[[:space:]]+/, "", name)
+                        # strip add_executable( if caught
+                        sub(/^add_executable\(/, "", name)
+                        printf "%s:%s\n", pkg, name
+                    }
+                }
+            }
+            # install(PROGRAMS ... DESTINATION ...) blocks — may span multiple lines.
+            /install[[:space:]]*\([[:space:]]*PROGRAMS/ { in_install = 1; sub(/.*PROGRAMS/, "", line); }
+            in_install >= 1 {
+                work = line
+                # Stop at DESTINATION.
+                n = split(work, toks, /[[:space:]]+/)
+                for (i = 1; i <= n; i++) {
+                    t = toks[i]
+                    if (t == "") continue
+                    if (t == "(" || t == ")") continue
+                    if (t == "PROGRAMS") continue
+                    if (t == "DESTINATION" || t ~ /^DESTINATION/) { in_install = 0; break }
+                    # strip surrounding parens
+                    gsub(/^\(/, "", t)
+                    gsub(/\)$/, "", t)
+                    if (t == "") continue
+                    # basename
+                    sub(/.*\//, "", t)
+                    if (t == "") continue
+                    printf "%s:%s\n", pkg, t
+                    # also strip .py extension
+                    stripped = t
+                    sub(/\.py$/, "", stripped)
+                    if (stripped != t) printf "%s:%s\n", pkg, stripped
+                }
+                if (line ~ /\)/) in_install = 0
+            }
+        ' "$cml"
+    }
+
+    : > "$m_valid_entries_file"
+    for pkg in $M_MANAGED_PKGS; do
+        var="m_cml_${pkg}"
+        m_collect_pkg_executables "$pkg" "${!var}" >> "$m_valid_entries_file"
+    done
+
+    m_bad=0
+    m_bad_examples=()
+    m_skipped=0
+    m_checked=0
+
+    # Parse each .launch.py, pulling (pkg, exe) pairs out of Node(...) calls.
+    # The parser is tolerant of multi-line Node(...) blocks; it reads the
+    # whole file into awk and searches for Node( ... ) expressions.
+    m_extract() {
+        local lp="$1"
+        awk '
+            BEGIN { RS = "Node[[:space:]]*\\("; first = 1 }
+            {
+                if (first) { first = 0; next }
+                blk = $0
+                # Find matching closing paren by walking the block until depth reaches 0.
+                depth = 1
+                end = 0
+                for (i = 1; i <= length(blk); i++) {
+                    c = substr(blk, i, 1)
+                    if (c == "(") depth++
+                    else if (c == ")") { depth--; if (depth == 0) { end = i; break } }
+                }
+                if (end == 0) next
+                call = substr(blk, 1, end - 1)
+                # Drop everything from # to end-of-line first (in case a kwarg
+                # has a comment).
+                # Not always safe, but good enough for our files.
+                gsub(/#[^\n]*/, "", call)
+                pkg = ""
+                exe = ""
+                if (match(call, /package[[:space:]]*=[[:space:]]*[\x27"][^\x27"]*[\x27"]/)) {
+                    chunk = substr(call, RSTART, RLENGTH)
+                    if (match(chunk, /[\x27"][^\x27"]*[\x27"]/)) {
+                        pkg = substr(chunk, RSTART + 1, RLENGTH - 2)
+                    }
+                }
+                if (match(call, /executable[[:space:]]*=[[:space:]]*[\x27"][^\x27"]*[\x27"]/)) {
+                    chunk = substr(call, RSTART, RLENGTH)
+                    if (match(chunk, /[\x27"][^\x27"]*[\x27"]/)) {
+                        exe = substr(chunk, RSTART + 1, RLENGTH - 2)
+                    }
+                }
+                if (pkg != "" && exe != "") {
+                    printf "%s\t%s\n", pkg, exe
+                }
+            }
+        ' "$lp"
+    }
+
+    while IFS= read -r lp; do
+        [ -z "$lp" ] && continue
+        rel="${lp#$REPO_ROOT/}"
+        while IFS=$'\t' read -r pkg exe; do
+            [ -z "$pkg" ] && continue
+            # Only check managed packages.
+            case " $M_MANAGED_PKGS " in
+                *" $pkg "*)
+                    m_checked=$((m_checked + 1))
+                    if grep -Fxq "$pkg:$exe" "$m_valid_entries_file" 2>/dev/null; then
+                        : # ok
+                    else
+                        # Also check without .py suffix.
+                        noext="${exe%.py}"
+                        if [ "$noext" != "$exe" ] && grep -Fxq "$pkg:$noext" "$m_valid_entries_file" 2>/dev/null; then
+                            : # ok
+                        else
+                            m_bad=$((m_bad + 1))
+                            m_bad_examples+=("$rel: Node(package='$pkg', executable='$exe') — no matching CMake target")
+                        fi
+                    fi
+                    ;;
+                *)
+                    m_skipped=$((m_skipped + 1))
+                    ;;
+            esac
+        done < <(m_extract "$lp")
+    done < <(find "$REPO_ROOT/backend" "$REPO_ROOT/frontend" -type f -name '*.launch.py' 2>/dev/null | grep -v '/tests/')
+
+    rm -f "$m_valid_entries_file"
+
+    if [ "$m_bad" -eq 0 ]; then
+        pass "M  every Node(package, executable) resolves in managed packages"
+    else
+        fail "M  every Node(package, executable) resolves in managed packages" \
+            "$m_bad missing; checked $m_checked managed, skipped $m_skipped external"
+        if [ "$VERBOSE" = "1" ]; then
+            for e in "${m_bad_examples[@]}"; do printf "         %s\n" "$e"; done
+        fi
+    fi
+fi
+
+# ============================================================================
+# N. Duplicate declare_parameter across files
+# ============================================================================
+section "N. Duplicate declare_parameter across files"
+#
+# Flag declare_parameter("key", ...) / <prefix>_declare_or_get<T>(node, "key", ...)
+# keys that appear in 2+ C++ source files in the same sloam / object_modeller
+# scope. We do not attempt to parse default values in shell; any key with
+# multiple distinct source files is reported as a footgun for human audit.
+# Catches the pre-existing case of sloam's number_of_robots declared in 3
+# files with 3 different defaults.
+
+if ! command -v awk >/dev/null 2>&1; then
+    skip "N  duplicate declare_parameter keys across files" "awk not available"
+else
+    n_tmp=$(mktemp 2>/dev/null || printf '/tmp/n_decls_%d' $$)
+    : > "$n_tmp"
+
+    find "$REPO_ROOT/backend/sloam" "$REPO_ROOT/frontend/object_modeller" \
+         -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' -o -name '*.cc' \) 2>/dev/null \
+      | grep -v '/clipper_semantic_object/' \
+      | while IFS= read -r f; do
+            awk -v file="$f" '
+                { sub(/\/\/.*$/, "", $0) }
+                /declare_parameter[[:space:]]*(<[^>]*>)?[[:space:]]*\(/ ||
+                /[a-zA-Z_]+declare_or_get[[:space:]]*(<[^>]*>)?[[:space:]]*\(/ {
+                    if (match($0, /"[^"]+"/)) {
+                        key = substr($0, RSTART + 1, RLENGTH - 2)
+                        if (key ~ /^[a-zA-Z_]/) {
+                            print key "\t" file
+                        }
+                    }
+                }
+            ' "$f"
+        done >> "$n_tmp"
+
+    n_bad=""
+    if [ -s "$n_tmp" ]; then
+        n_bad=$(awk -F'\t' '
+            {
+                pair = $1 SUBSEP $2
+                if (!(pair in seen)) {
+                    seen[pair] = 1
+                    file_count[$1]++
+                    file_list[$1] = (file_list[$1] ? file_list[$1] " | " : "") $2
+                }
+            }
+            END {
+                for (k in file_count) {
+                    if (file_count[k] >= 2) {
+                        print k ": " file_list[k]
+                    }
+                }
+            }
+        ' "$n_tmp")
+    fi
+    rm -f "$n_tmp"
+
+    if [ -z "$n_bad" ]; then
+        pass "N  no declare_parameter key declared in multiple files"
+    else
+        n_count=$(printf "%s\n" "$n_bad" | wc -l | tr -d ' ')
+        fail "N  no declare_parameter key declared in multiple files" "$n_count key(s) in 2+ files"
+        if [ "$VERBOSE" = "1" ]; then
+            printf "%s\n" "$n_bad" | head -10 | sed 's/^/         /'
+        fi
+    fi
+fi
+
+
+# ============================================================================
 # Summary
 # ============================================================================
 print_summary
