@@ -18,6 +18,7 @@ This repository contains the source code for the project SlideSLAM: Sparse, Ligh
 - [Table of contents](#table-of-contents)
 - [Use docker (recommended)](#use-docker-recommended)
 - [Build from source (only if you do not want to use docker)](#build-from-source-only-if-you-do-not-want-to-use-docker)
+- [Converting ROS1 bags to ROS2 (required before running demos)](#converting-ros1-bags-to-ros2-required-before-running-demos)
 - [Run our demos (with processed data)](#run-our-demos-with-processed-data)
   - [Download example data](#download-example-data)
   - [What these demos will do](#what-these-demos-will-do)
@@ -237,10 +238,31 @@ sudo rm -rf /usr/local/include/gtsam
 ```
 - If you have installed GTSAM using apt-get, remove them first, use this command `sudo apt remove --purge libgtsam*
 
+# Converting ROS1 bags to ROS2 (required before running demos)
+
+All of our published demo / benchmark bags — the processed multi-robot bags used under _Run our demos_ and the raw sensor bags used under _Run on raw sensor data_ — were recorded under **ROS1 Noetic** and are distributed as legacy `.bag` files. ROS2 Jazzy's `ros2 bag play` cannot read ROS1 bags directly, so **you must convert them once before running any of the demos** on this branch.
+
+We provide a small wrapper script that drives the standalone [`rosbags-convert`](https://gitlab.com/ternaris/rosbags) tool:
+
+```
+# one-time install (no ROS1 required — the `rosbags` package is self-contained):
+pip install rosbags
+
+# convert a single .bag file:
+./tools/convert_ros1_bags.sh /path/to/forest_robot1.bag
+
+# or convert every .bag in a directory at once:
+./tools/convert_ros1_bags.sh /path/to/bags/
+```
+
+By default the converted ROS2 bag is written next to the original as a directory (containing `metadata.yaml` + a `.db3` sqlite3 file) with the same base name. Existing output directories are skipped, so the script is safe to re-run. See `tools/convert_ros1_bags.sh` for full options.
+
+After conversion, point `BAG_DIR` in the tmux scripts (e.g. `tmux_multi_robot_with_bags_forest.sh`) at the directory containing the **converted** ROS2 bags, not the original `.bag` files.
+
 # Run our demos (with processed data)
 Note: if the access to any of the links is lost, please contact the authors, and we will provide the data from our lab's NAS.
 
-This section will guide you through running our demos with processed data. We provide processed data in the form of ROS2 bags that contain only the odometry and semantic measurements (i.e. object observations). Running the entire pipeline containing object detection and the rest of SLAM for multiple robots simultaneously onboard one computer is computationally and memory intensive. 
+This section will guide you through running our demos with processed data. We provide processed data as legacy ROS1 `.bag` files that contain only the odometry and semantic measurements (i.e. object observations); **you must convert them to ROS2 bag format first** using `tools/convert_ros1_bags.sh` (see the _Converting ROS1 bags to ROS2_ section above). Running the entire pipeline containing object detection and the rest of SLAM for multiple robots simultaneously onboard one computer is computationally and memory intensive. 
 
 **Note:** Such tests can to a large degree replicate what would happen onboard the robot since when you run real world multi-robot experiment, each robot will only be responsible for processing its own data, and the processed data shared by the other robots in the form provided by here. 
 
@@ -285,7 +307,7 @@ If you want to terminate this program, go to the last terminal window and press 
 **To run the same above example with urban outdoor data, use the `tmux_multi_robot_with_bags_parking_lot.sh` script and repeat the above steps.**
 
 # Run on raw sensor data (RGBD or LiDAR bags)
-This section will guide you through running our code stack with raw sensor data, which is ROS2 bags (`ros2 bag` format) containing LiDAR-based or RGBD-based data. Note: size of these raw bags are usually anywhere from 10-100 GB. If your data is in legacy ROS1 `.bag` format you can convert it with [`rosbags-convert`](https://gitlab.com/ternaris/rosbags) before playing it back.
+This section will guide you through running our code stack with raw sensor data. Our distributed raw bags are legacy ROS1 `.bag` files (10-100 GB each) — **run `tools/convert_ros1_bags.sh` on them first** (see the _Converting ROS1 bags to ROS2_ section above) so that `ros2 bag play` can replay them under ROS2 Jazzy.
 
 ## Download example data
 
