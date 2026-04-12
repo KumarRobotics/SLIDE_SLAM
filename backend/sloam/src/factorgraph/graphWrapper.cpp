@@ -85,7 +85,7 @@ bool SemanticFactorGraphWrapper::addSLOAMObservation(
     // set priors for the first pose
     setPriors(curr_pose, robotID);
     RCLCPP_WARN_STREAM(gw_logger(),
-        "EROOR: Factor graph optimization is done when adding the first "
+        "WARN: Factor graph optimization is done when adding the first "
         "pose prior, this may cause problems!!!");
   } else {
     // if cov is not specified, deafult covariance will be used, see
