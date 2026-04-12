@@ -1,8 +1,0 @@
-<launch>
-    <node name="rosbag_play" pkg="rosbag" type="play" args="
-    /home/sam/bags/pennovation-bags/generic_sloam_2_robots_multi_robot_MOST_IMPORTANT_2022-06-30-22-50-33.bag
-    --clock 
-    --topics /quadrotor1/car_cuboids_body /quadrotor1/ground_cloud /quadrotor1/lidar_odom /quadrotor1/tree_cloud
-    " 
-    output="screen"/>
-</launch>

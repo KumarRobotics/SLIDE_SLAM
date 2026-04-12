@@ -32,4 +32,4 @@ CURR_TIMEZONE=$(date +%Z)
 
 BAG_PREFIX=VEMS-SLAM-${AGENT}-${CURR_TIMEZONE}
 
-eval rosbag record -b512 $ALL_TOPICS -o $BAG_PREFIX
+eval ros2 bag record $ALL_TOPICS -o $BAG_PREFIX

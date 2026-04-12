@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-
-<launch>
-    <node pkg="tf2_ros" type="static_transform_publisher" name="init_odom_map_transform_pub" args="0 0 0 0 0 0 quadrotor/map dragonfly67/odom"/>
-    <node pkg="tf2_ros" type="static_transform_publisher" name="init_odom_map_transform_pub2" args="0 0 0 0 0 0 camera_init quadrotor/map"/>
- </launch>
