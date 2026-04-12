@@ -5,7 +5,7 @@
 >
 > This branch ports the entire SlideSLAM stack from **ROS1 Noetic** to **ROS2 Jazzy Jalisco** (Ubuntu 24.04) — the latest ROS2 LTS. It is provided to help developers who want to use SlideSLAM with ROS2.
 >
-> **Note:** this ROS2 port has **not been as extensively tested or experimented with** as the ROS1 version. If you want the version used to produce the results in our paper, or the most battle-tested setup, please use the [`master`](https://github.com/KumarRobotics/SLIDE_SLAM/tree/master) branch (ROS1 Noetic, Ubuntu 20.04).
+> **Note:** this ROS2 port has **not been as extensively tested or experimented with** as the ROS1 version. If you want the version used to produce the results in our paper, or the most battle-tested setup, please use the [`master`](https://github.com/KumarRobotics/SLIDE_SLAM/tree/master) branch (ROS1 Noetic, Ubuntu 20.04). See [Testing the ROS2 port](#testing-the-ros2-port) at the end of this README for the full list of static and runtime checks we **do** run on this branch, and which runtime behaviors have **not** been verified end-to-end.
 >
 > Issues and pull requests that improve the ROS2 port are very welcome.
 
@@ -28,6 +28,11 @@ This repository contains the source code for the project SlideSLAM: Sparse, Ligh
   - [Run our RGBD data experiments](#run-our-rgbd-data-experiments)
   - [Run our LiDAR Data experiments](#run-our-lidar-data-experiments)
 - [Troubleshoot](#troubleshoot)
+- [Testing the ROS2 port](#testing-the-ros2-port)
+  - [Static checks (`tests/static/check_ros2_port.sh`)](#static-checks-teststaticcheck_ros2_portsh)
+  - [pytest mirror (`tests/python/`)](#pytest-mirror-testspython)
+  - [Launch-graph smoke test (`tests/integration/launch_smoke_test.sh`)](#launch-graph-smoke-test-testsintegrationlaunch_smoke_testsh)
+  - [What has NOT been tested](#what-has-not-been-tested)
 - [Acknowledgement](#acknowledgement)
 - [Citation](#citation)
 
@@ -414,6 +419,72 @@ If you want to terminate this program, go to the last terminal window and press 
 # Troubleshoot
 **Rate of segmentation:**
 - When running on your own data, we recommend to throttle the segmentation topic (segmented point cloud or images) rate to 2-4 Hz to avoid computation delay in the front end, especially if you’re experiencing performance issues at higher rates. Please also update the `expected_segmentation_frequency` parameter in the corresponding `process_cloud_node_*_params.yaml` file as well as the `desired_frequency` in the `infer_node_params.yaml` to the actual rate of the topic. 
+
+# Testing the ROS2 port
+
+The `ros2_dev` branch ships a static test suite under [`tests/`](tests/) that future contributors can run to regression-check the port without needing a full ROS2 Jazzy build environment. The suite has three layers — a pure-bash static checker, a pytest mirror, and a runtime launch-graph smoke test. See [`tests/README.md`](tests/README.md) for per-layer usage notes.
+
+**Current state (after the port + the review passes done on this branch):** `bash tests/static/check_ros2_port.sh` reports **51 checks, 51 passed, 0 failed, 0 skipped**.
+
+## Static checks (`tests/static/check_ros2_port.sh`)
+
+Pure bash + [ripgrep](https://github.com/BurntSushi/ripgrep) + `awk`. Runs anywhere with zero Python or ROS2 dependencies. **51 checks across 14 sections (A–N)** verifying:
+
+- **A** — no ROS1 C++ idioms in active source under `backend/sloam/` and `frontend/object_modeller/` (21 sub-checks). Verifies zero occurrences of: `ros/ros.h`, `ros/package.h`, old-style message includes (`<pkg/Type.h>`), `tf/` headers, `nodelet/`, `pluginlib/`, `actionlib/`, `ros::NodeHandle`, `ros::Publisher`, `ros::Subscriber`, `ros::Time::now()`, `ros::Duration`, `ros::Rate`, `ros::init`, `ros::spin`/`spinOnce`, `ros::ok`, `ROS_INFO`/`WARN`/`ERROR`/`DEBUG`/`FATAL`, `nodelet::Nodelet`, `PLUGINLIB_EXPORT_CLASS`, `actionlib::`.
+- **B** — no ROS1 Python idioms under `frontend/object_modeller/` and `frontend/scan2shape/` (6 sub-checks): no `import rospy` / `from rospy`, no `rospy.*` attribute access, no bare `import tf` / `from tf.*`, no `ros_numpy`, no `rospkg`.
+- **C** — every `package.xml` across all 5 ROS packages is format 3, declares `ament_cmake`/`ament_python`/`rosidl_default_generators` as buildtool, declares `<build_type>` in `<export>`, contains no `catkin` or `message_generation`/`message_runtime`.
+- **D** — every `CMakeLists.txt` across all 5 packages has no `find_package(catkin...)`, no `catkin_package(...)`, no `${catkin_INCLUDE_DIRS}`/`${catkin_LIBRARIES}`, no `add_message_files`/`add_service_files`/`add_action_files`/`generate_messages`, and calls `ament_package()` at the end.
+- **E** — launch file structure (4 sub-checks): no XML `*.launch` files under `backend/` or `frontend/`, every `*.launch.py` imports `LaunchDescription`, every `*.launch.py` defines `generate_launch_description`, no `.launch.py` contains a literal `<launch>` XML tag (half-converted file).
+- **F** — no camelCase `sloam_msgs` field accessors (`msg.robotID`, `msg.treeModels`, `msg.labelXYZ`, etc.) remain in any `.cpp`/`.h`/`.hpp`/`.py` file. The port renamed 25 fields from camelCase to `snake_case` to satisfy `rosidl`'s naming rules; this check catches any accessor we forgot to update. The internal C++ struct `PoseMstPair::relativeRawOdomMotion` is correctly preserved (not a ROS message field) via a word-boundary regex carve-out.
+- **G** — every `#include <sloam_msgs/msg/*.hpp>` / `<sloam_msgs/srv/*.hpp>` / `<sloam_msgs/action/*.hpp>` and every `from sloam_msgs.msg import X` / `from sloam_msgs.srv import X` / `from sloam_msgs.action import X` resolves to a real `.msg`/`.srv`/`.action` file in the `sloam_msgs` package, using the known snake_case ↔ UpperCamelCase mapping.
+- **H** — every file listed in every `install(PROGRAMS ...)` block in every `CMakeLists.txt` exists on disk relative to that CMakeLists.
+- **I** — no `nodelet_plugins.xml` remains anywhere in the repo. The ROS1 nodelet machinery was replaced by `rclcpp_components::RCLCPP_COMPONENTS_REGISTER_NODE`.
+- **J** — no XML `*.launch` files remain anywhere outside `tools/` and `tests/`.
+- **K** — within each `*.launch.py` file, every `LaunchConfiguration('x')` reference has a matching `DeclareLaunchArgument('x', ...)` in the same file. Within-file check (does not follow `IncludeLaunchDescription` chains). Exempts the ROS2-injected launch builtins (`log_level`, `launch_prefix`, `use_sim_time`, etc.). The awk reads each launch file as a single record so multi-line `DeclareLaunchArgument(\n 'name',\n ...)` forms are matched correctly.
+- **L** — no hardcoded user-specific absolute paths (`/home/<user>/`, `/opt/slideslam_docker_ws`, `/opt/bags/`, `/root/`) in any `.cpp`/`.h`/`.hpp`/`.py` source file. Strips C and Python comments before matching.
+- **M** — every `Node(package='<local_pkg>', executable='<y>')` call in every `*.launch.py` resolves to either an `add_executable(<y> ...)` target or an `install(PROGRAMS .../<y>)` entry in the target package's `CMakeLists.txt`. Local packages are `sloam`, `sloam_msgs`, `multi_robot_utils_launch`, `object_modeller`, `scan2shape_launch`; external packages (`tf2_ros`, `topic_tools`, `rviz2`, third-party drivers, etc.) are skipped.
+- **N** — no raw `declare_parameter("key", ...)` call appears in 2+ source files within the same package. ROS2 throws `rclcpp::exceptions::ParameterAlreadyDeclared` at runtime if the same parameter is declared twice on the same node, so this is a real hazard. The safe `*_declare_or_get<T>(node, "key", default)` wrapper family used throughout `backend/sloam` (`in_declare_or_get`, `sn_declare_or_get`, `pr_declare_or_get`, plain `declare_or_get`) is explicitly exempted — those wrappers guard with `node->has_parameter()` before declaring, so multiple callers on the same key are safe.
+
+Run it with:
+
+```
+bash tests/static/check_ros2_port.sh            # summary only
+bash tests/static/check_ros2_port.sh --verbose  # dump hit details on failures
+```
+
+Exits 0 if all 51 pass, non-zero otherwise. Exempted from every section: `backend/sloam/clipper_semantic_object/` (vendored third-party CMake library) and `frontend/scan2shape/rviz/`.
+
+## pytest mirror (`tests/python/`)
+
+Parallel encoding of the same checks as real `pytest` unit tests, for use in a future CI that has Python 3.10+ available. Uses only the standard library plus `pytest` — no ROS imports. The bash runner above is the authoritative layer; the pytest layer is useful when a build system needs structured pass/fail output.
+
+```
+pip install pytest
+pytest tests/python -v
+```
+
+## Launch-graph smoke test (`tests/integration/launch_smoke_test.sh`)
+
+Runtime test that requires a **working ROS2 Jazzy environment** (`source /opt/ros/jazzy/setup.bash`). For every `*.launch.py` file under `backend/` and `frontend/`, runs `ros2 launch --print-description <abs_path>` with a configurable per-file timeout (default 20s) and reports `OK` / `FAIL` / `TIMEOUT` per file. Using the direct-file-path form of `ros2 launch` means this test does NOT require the workspace to be built — only that `ros2` itself is on `PATH`. Skips with exit code 77 (autotools-style) if `ros2` is not installed, so CI runners without a ROS2 environment treat it as a skipped test rather than a failed one.
+
+```
+bash tests/integration/launch_smoke_test.sh
+VERBOSE=1 bash tests/integration/launch_smoke_test.sh     # dump per-file error output
+LAUNCH_TIMEOUT=60 bash tests/integration/launch_smoke_test.sh
+```
+
+## What has NOT been tested
+
+Because no ROS2 Jazzy + GTSAM + PCL + GPU machine was available while this branch was put together, the following have **not** been verified end-to-end on `ros2_dev`. Contributions that exercise any of the below on a real ROS2 Jazzy machine — and file an issue or PR with the findings — are very welcome:
+
+- Actual `colcon build --symlink-install` success of any package on Ubuntu 24.04 + ROS2 Jazzy (the static checks catch CMake/package.xml _consistency_, but they cannot confirm that the C++ actually _compiles_ against the installed ROS2 + GTSAM + Sophus + PCL + OpenCV headers).
+- Runtime publisher / subscriber behaviour of any node — topic flow, QoS compatibility, message serialization round-trips.
+- SLAM correctness on converted ROS2 bags (see the _Converting ROS1 bags to ROS2_ section for the conversion tool).
+- TF chain correctness across the multi-robot pipeline.
+- Action server / client handshakes for `sloam_msgs::action::ActiveLoopClosure` and `sloam_msgs::action::DetectLoopClosure`.
+- End-to-end demo runs on the forest, parking-lot, indoor RGBD, and KITTI datasets.
+
+A concrete checklist of runtime integration tests that a future contributor should implement lives in [`tests/integration/README.md`](tests/integration/README.md).
 
 # Acknowledgement
 We use GTSAM as the backend. We thank [Guilherme Nardari](https://linkedin.com/in/guilherme-nardari-23ba91a8) for his contributions to this repository. 
