@@ -51,7 +51,7 @@ tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; ros2 launch object_
 tmux select-pane -t $SESSION_NAME:1.1
 tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; ros2 launch object_modeller sync_semantic_measurements.launch.py robot_name:=robot0 odom_topic:=/dragonfly67/quadrotor_ukf/control_odom" Enter
 tmux select-pane -t $SESSION_NAME:1.2
-tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; ros2 launch sloam single_robot_sloam_test_f250.launch.py enable_rviz:=true" Enter
+tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; ros2 launch sloam single_robot_sloam_test.launch.py enable_rviz:=true" Enter
 tmux select-pane -t $SESSION_NAME:1.3
 tmux send-keys -t $SESSION_NAME "$SETUP_ROS_STRING; sleep 2; ros2 launch scan2shape_launch process_cloud_node_rgbd_indoor_with_ns.launch.py odom_topic:=/dragonfly67/quadrotor_ukf/control_odom robot_name:=robot0" Enter
 tmux select-pane -t $SESSION_NAME:1.4
