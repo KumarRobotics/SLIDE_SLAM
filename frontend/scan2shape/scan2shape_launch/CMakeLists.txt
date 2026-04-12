@@ -18,6 +18,8 @@ install(PROGRAMS
   ../script/process_cloud_node.py
   ../script/process_cloud_node_outdoor.py
   ../script/process_cloud_node_lidar_indoor.py
+  ../script/pub_loop_closure_retrigger.py
+  ../script/add_noise_to_ground_truth_odom.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
