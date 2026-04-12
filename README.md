@@ -475,16 +475,16 @@ LAUNCH_TIMEOUT=60 bash tests/integration/launch_smoke_test.sh
 
 ## What has NOT been tested
 
-Because no ROS2 Jazzy + GTSAM + PCL + GPU machine was available while this branch was put together, the following have **not** been verified end-to-end on `ros2_dev`. Contributions that exercise any of the below on a real ROS2 Jazzy machine — and file an issue or PR with the findings — are very welcome:
+The following have not been verified end-to-end on `ros2_dev`:
 
-- Actual `colcon build --symlink-install` success of any package on Ubuntu 24.04 + ROS2 Jazzy (the static checks catch CMake/package.xml _consistency_, but they cannot confirm that the C++ actually _compiles_ against the installed ROS2 + GTSAM + Sophus + PCL + OpenCV headers).
-- Runtime publisher / subscriber behaviour of any node — topic flow, QoS compatibility, message serialization round-trips.
-- SLAM correctness on converted ROS2 bags (see the _Converting ROS1 bags to ROS2_ section for the conversion tool).
+- `colcon build --symlink-install` success on Ubuntu 24.04 + ROS2 Jazzy.
+- Runtime pub/sub, QoS, and message serialization.
+- SLAM correctness on converted ROS2 bags.
 - TF chain correctness across the multi-robot pipeline.
-- Action server / client handshakes for `sloam_msgs::action::ActiveLoopClosure` and `sloam_msgs::action::DetectLoopClosure`.
-- End-to-end demo runs on the forest, parking-lot, indoor RGBD, and KITTI datasets.
+- Action handshakes for `ActiveLoopClosure` / `DetectLoopClosure`.
+- End-to-end demo runs (forest, parking lot, indoor RGBD, KITTI).
 
-A concrete checklist of runtime integration tests that a future contributor should implement lives in [`tests/integration/README.md`](tests/integration/README.md).
+See [`tests/integration/README.md`](tests/integration/README.md) for the concrete checklist of runtime tests future contributors should add.
 
 # Acknowledgement
 We use GTSAM as the backend. We thank [Guilherme Nardari](https://linkedin.com/in/guilherme-nardari-23ba91a8) for his contributions to this repository. 
