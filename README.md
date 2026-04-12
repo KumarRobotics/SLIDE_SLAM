@@ -1,8 +1,17 @@
 # SlideSLAM
 
-This repository contains the source code for the project SlideSLAM: Sparse, Lightweight, Decentralized Metric-Semantic SLAM for Multi-Robot Navigation. 
+> [!NOTE]
+> ## Looking for ROS2 support?
+>
+> This `master` branch is the **ROS1 Noetic** (Ubuntu 20.04) version of SlideSLAM — the version used to produce the results in our paper and the most
+battle-tested setup.
+>
+> An experimental **ROS2 Jazzy Jalisco** (Ubuntu 24.04) port lives on the [`ros2_dev`](https://github.com/KumarRobotics/SLIDE_SLAM/tree/ros2_dev) branch.
+It has not been as extensively tested as this `master` branch, but is provided to help developers who want to use SlideSLAM with ROS2.
+
+This repository contains the source code for the project SlideSLAM: Sparse, Lightweight, Decentralized Metric-Semantic SLAM for Multi-Robot Navigation.
 - More details can be found on the [project website](https://xurobotics.github.io/slideslam/).
-- Our paper is available on arXiv [here](https://arxiv.org/abs/2406.17249). 
+- Our paper is available on arXiv [here](https://arxiv.org/abs/2406.17249).
 
 # Table of contents
 - [SlideSLAM](#slideslam)
