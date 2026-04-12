@@ -15,7 +15,7 @@
 #include <ellipsoid.h>
 #include <definitions.h>
 #include <plane.h>
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 #include <utils.h>
 
 //  --------------- Feature and Model Structures ------------------

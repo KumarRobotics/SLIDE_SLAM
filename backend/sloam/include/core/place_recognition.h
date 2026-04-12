@@ -10,13 +10,13 @@
 #pragma once
 #include <definitions.h>
 #include <math.h>
-#include <ros/ros.h>
-#include <visualization_msgs/MarkerArray.h>
+#include <rclcpp/rclcpp.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/StdVector>
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <cmath>
 #include <unsupported/Eigen/NonLinearOptimization>
 
@@ -42,8 +42,8 @@ class PlaceRecognition {
   // specify if this is inter-loop closure or intra-loop closure
   bool inter_loop_closure = true;
 
-  // constructor takes in ros node handle
-  PlaceRecognition(const ros::NodeHandle &nh);
+  // constructor takes in rclcpp Node pointer (used for parameters and pub/sub)
+  PlaceRecognition(rclcpp::Node *node);
 
   /**
    * @brief MatchMaps, match two maps (set of objects) and output the
@@ -156,7 +156,7 @@ class PlaceRecognition {
 
  private:
   void ParamInit();
-  ros::NodeHandle nh_;
+  rclcpp::Node *node_;
   void VisualizeMatchingResults(
       const std::vector<Eigen::Vector4d> &map_objects_matched,
       const std::vector<Eigen::Vector4d> &detection_objects_matched,
@@ -165,7 +165,7 @@ class PlaceRecognition {
 
   Eigen::Vector2d getCentroid(const std::vector<Eigen::Vector7d> &objects);
 
-  ros::Publisher viz_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr viz_pub_;
   std::string ns_prefix_;
 
   // parameters

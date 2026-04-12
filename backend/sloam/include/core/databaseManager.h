@@ -10,19 +10,20 @@
 #pragma once
 
 #include <definitions.h>
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 #include <utils.h>
 
 // include messages
-#include <geometry_msgs/Pose.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <sloam_msgs/ROSCube.h>
-#include <sloam_msgs/ROSCylinder.h>
-#include <sloam_msgs/ROSEllipsoid.h>
-#include <sloam_msgs/PoseMst.h>
-#include <sloam_msgs/PoseMstBundle.h>
-#include <sloam_msgs/vector4d.h>
-#include <sloam_msgs/vector7d.h>
+#include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <sloam_msgs/msg/ros_cube.hpp>
+#include <sloam_msgs/msg/ros_cylinder.hpp>
+#include <sloam_msgs/msg/ros_ellipsoid.hpp>
+#include <sloam_msgs/msg/pose_mst.hpp>
+#include <sloam_msgs/msg/pose_mst_bundle.hpp>
+#include <sloam_msgs/msg/inter_robot_tf.hpp>
+#include <sloam_msgs/msg/vector4d.hpp>
+#include <sloam_msgs/msg/vector7d.hpp>
 // include std
 #include <deque>
 #include <math.h>
@@ -38,8 +39,8 @@
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 
-namespace Eigen { 
-  typedef Matrix<double, 7, 1> Vector7d; 
+namespace Eigen {
+  typedef Matrix<double, 7, 1> Vector7d;
 }
 
 struct PoseMstPair {
@@ -73,9 +74,9 @@ public:
   /**
    * @brief Construct a new database Manager object
    *
-   * @param nh
+   * @param node rclcpp Node used for parameters and pub/sub
    */
-  explicit databaseManager(const ros::NodeHandle &nh);
+  explicit databaseManager(rclcpp::Node *node);
 
   void publishPoseMsts(int robotID);
 
@@ -202,11 +203,13 @@ public:
 
   void DADebugger(const PoseMstPair &pmp, int robotID) {
     SE3 curPose = pmp.keyPose;
-    ROS_DEBUG_STREAM("Current position of robot "
-                     << robotID << ":" << curPose.translation()[0] << ","
-                     << curPose.translation()[1] << ","
-                     << curPose.translation()[2]);
-    ROS_DEBUG_STREAM("It observed the following cylinder positions:");
+    RCLCPP_DEBUG_STREAM(node_->get_logger(),
+                        "Current position of robot "
+                            << robotID << ":" << curPose.translation()[0] << ","
+                            << curPose.translation()[1] << ","
+                            << curPose.translation()[2]);
+    RCLCPP_DEBUG_STREAM(node_->get_logger(),
+                        "It observed the following cylinder positions:");
     for (const auto &cm : pmp.cylinderMsts) {
       printObjInfo(cm);
     }
@@ -217,17 +220,19 @@ public:
 
   void printObjInfo(const gtsam_cylinder::CylinderMeasurement &obj) {
     gtsam::Point3 root = obj.root;
-    ROS_DEBUG_STREAM("(" << root.x() << "," << root.y() << "," << root.z()
-                         << ")");
+    RCLCPP_DEBUG_STREAM(node_->get_logger(),
+                        "(" << root.x() << "," << root.y() << "," << root.z()
+                            << ")");
   }
 
   void printObjInfo(const gtsam_cube::CubeMeasurement &obj) {
     gtsam::Point3 position = obj.pose.translation();
-    ROS_DEBUG_STREAM("(" << position.x() << "," << position.y() << ","
-                         << position.z() << ")");
+    RCLCPP_DEBUG_STREAM(node_->get_logger(),
+                        "(" << position.x() << "," << position.y() << ","
+                            << position.z() << ")");
   }
 
-  static SE3 toSE3Pose(const geometry_msgs::Pose &pose_msg) {
+  static SE3 toSE3Pose(const geometry_msgs::msg::Pose &pose_msg) {
     // Extract translation and rotation components
     Eigen::Vector3d translation(pose_msg.position.x, pose_msg.position.y,
                                 pose_msg.position.z);
@@ -241,27 +246,26 @@ public:
 
 private:
   // data structure to store transmitted data by robotID <robotID, robotData>
-  ros::NodeHandle nh_;
+  rclcpp::Node *node_;
   int hostRobotID_;
-  ros::Publisher poseMstPub_;
-  ros::Subscriber poseMstSub_;
-  ros::Publisher fakeCommunicationPub_;
+  rclcpp::Publisher<sloam_msgs::msg::PoseMstBundle>::SharedPtr poseMstPub_;
+  rclcpp::Publisher<sloam_msgs::msg::PoseMstBundle>::SharedPtr fakeCommunicationPub_;
   std::unordered_map<size_t, robotData> robotDataDict_;
   std::unordered_map<size_t, std::vector<Eigen::Vector7d>> robotMapDict_;
   bool priorTF2WorldKnown_;
   SE3 priorTF2World_;
   bool priorTFKnown_;
-  ros::Timer timer_;
+  rclcpp::TimerBase::SharedPtr timer_;
   // communication must happen at least every comm_waittime_ seconds, in other words, how long does the robot wait between two communication attempts
   double commWaitTime_;
-  ros::Time startTime_;
-  
-  std::vector<ros::Subscriber> poseMstVectorSub_;
+  rclcpp::Time startTime_;
 
-  void poseMstCb_(const sloam_msgs::PoseMstBundle &msgs);
-  void runCommunication_(const ros::TimerEvent &e);
-  void measureReceivedCommMsgSize(const sloam_msgs::PoseMstBundle &msgs);
-  static gtsam::Pose3 ToGtsamPose3(const geometry_msgs::Pose &pose_msg) {
+  std::vector<rclcpp::Subscription<sloam_msgs::msg::PoseMstBundle>::SharedPtr> poseMstVectorSub_;
+
+  void poseMstCb_(const sloam_msgs::msg::PoseMstBundle::ConstSharedPtr msgs);
+  void runCommunication_();
+  void measureReceivedCommMsgSize(const sloam_msgs::msg::PoseMstBundle &msgs);
+  static gtsam::Pose3 ToGtsamPose3(const geometry_msgs::msg::Pose &pose_msg) {
     gtsam::Point3 translation(pose_msg.position.x, pose_msg.position.y,
                               pose_msg.position.z);
 
@@ -274,8 +278,8 @@ private:
     return pose;
   }
 
-  static geometry_msgs::Pose gtsamPoseToRosPose(const gtsam::Pose3 &pose3) {
-    geometry_msgs::Pose pose_msg;
+  static geometry_msgs::msg::Pose gtsamPoseToRosPose(const gtsam::Pose3 &pose3) {
+    geometry_msgs::msg::Pose pose_msg;
     const gtsam::Point3 &translation = pose3.translation();
     pose_msg.position.x = translation.x();
     pose_msg.position.y = translation.y();
@@ -290,11 +294,11 @@ private:
     return pose_msg;
   }
 
-  static std::vector<sloam_msgs::ROSCube>
+  static std::vector<sloam_msgs::msg::ROSCube>
   obj2RosObjMsg(const std::vector<Cube> &msts) {
-    std::vector<sloam_msgs::ROSCube> rosCubes;
+    std::vector<sloam_msgs::msg::ROSCube> rosCubes;
     for (const auto &mst : msts) {
-      sloam_msgs::ROSCube curRosCube;
+      sloam_msgs::msg::ROSCube curRosCube;
       for (int j = 0; j < 3; j++) {
         curRosCube.dim[j] = mst.model.scale[j];
       }
@@ -305,11 +309,11 @@ private:
     return rosCubes;
   }
 
-  static std::vector<sloam_msgs::ROSCylinder>
+  static std::vector<sloam_msgs::msg::ROSCylinder>
   obj2RosObjMsg(const std::vector<Cylinder> &msts) {
-    std::vector<sloam_msgs::ROSCylinder> rosCylinders;
+    std::vector<sloam_msgs::msg::ROSCylinder> rosCylinders;
     for (const auto &mst : msts) {
-      sloam_msgs::ROSCylinder rosCylinderMsg;
+      sloam_msgs::msg::ROSCylinder rosCylinderMsg;
       for (int j = 0; j < 3; j++) {
         rosCylinderMsg.ray[j] = mst.model.ray[j];
         rosCylinderMsg.root[j] = mst.model.root[j];
@@ -321,11 +325,11 @@ private:
     return rosCylinders;
   }
 
-  static std::vector<sloam_msgs::ROSEllipsoid>
+  static std::vector<sloam_msgs::msg::ROSEllipsoid>
   obj2RosObjMsg(const std::vector<Ellipsoid> &msts) {
-    std::vector<sloam_msgs::ROSEllipsoid> rosEllipsoids;
+    std::vector<sloam_msgs::msg::ROSEllipsoid> rosEllipsoids;
     for (const auto &mst : msts) {
-      sloam_msgs::ROSEllipsoid rosEllipsoidMsg;
+      sloam_msgs::msg::ROSEllipsoid rosEllipsoidMsg;
       for (int j = 0; j < 3; j++) {
         rosEllipsoidMsg.scale[j] = mst.model.scale[j];
       }

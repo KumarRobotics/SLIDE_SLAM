@@ -9,15 +9,16 @@
 
 #pragma once
 
-#include <nodelet/nodelet.h>
+#include <rclcpp/rclcpp.hpp>
 #include <sloamNode.h>
 
+#include <memory>
+
 namespace sloam {
-class SLOAMNodelet : public nodelet::Nodelet {
+class SLOAMNodelet : public rclcpp::Node {
  public:
-  SLOAMNodelet() {}
-  ~SLOAMNodelet() {}
-  virtual void onInit();
+  explicit SLOAMNodelet(const rclcpp::NodeOptions &options);
+  ~SLOAMNodelet() = default;
 
  private:
   SLOAMNode::Ptr sloamNode;

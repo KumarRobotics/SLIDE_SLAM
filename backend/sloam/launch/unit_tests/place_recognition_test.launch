@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<launch>
-    <rosparam file="$(find sloam)/params/sloam.yaml" command="load" />
-    <node pkg="sloam" type="sloam_place_recognition_test" name="place_recognition_test" output="screen">
-    </node>
-</launch>

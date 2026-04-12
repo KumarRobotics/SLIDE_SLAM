@@ -14,9 +14,18 @@
 
 namespace sloam {
 
+namespace {
+inline rclcpp::Logger viz_logger() {
+  return rclcpp::get_logger("sloam_viz");
+}
+inline rclcpp::Time now_ros_time() {
+  return rclcpp::Clock(RCL_ROS_TIME).now();
+}
+}  // namespace
+
 // functions adapted from ros tf2/tf2_eigen
-geometry_msgs::Quaternion toMsg_(const Quat &in) {
-  geometry_msgs::Quaternion msg;
+geometry_msgs::msg::Quaternion toMsg_(const Quat &in) {
+  geometry_msgs::msg::Quaternion msg;
   msg.w = in.w();
   msg.x = in.x();
   msg.y = in.y();
@@ -24,32 +33,32 @@ geometry_msgs::Quaternion toMsg_(const Quat &in) {
   return msg;
 }
 
-geometry_msgs::Point toMsg_(const Vector3 &in) {
-  geometry_msgs::Point msg;
+geometry_msgs::msg::Point toMsg_(const Vector3 &in) {
+  geometry_msgs::msg::Point msg;
   msg.x = in.x();
   msg.y = in.y();
   msg.z = in.z();
   return msg;
 }
 
-geometry_msgs::Quaternion toRosQuat_(const Sophus::SO3d &R) {
+geometry_msgs::msg::Quaternion toRosQuat_(const Sophus::SO3d &R) {
   return toMsg_(R.unit_quaternion());
 }
 
-geometry_msgs::Pose toRosPose_(const SE3 &T) {
-  geometry_msgs::Pose pose;
+geometry_msgs::msg::Pose toRosPose_(const SE3 &T) {
+  geometry_msgs::msg::Pose pose;
   pose.position = toMsg_(T.translation());
   pose.orientation = toRosQuat_(T.so3());
   return pose;
 }
 
-nav_msgs::Odometry toRosOdom_(const SE3 &pose, const std::string slam_ref_frame,
-                              const ros::Time stamp) {
-  nav_msgs::Odometry odom;
+nav_msgs::msg::Odometry toRosOdom_(const SE3 &pose, const std::string slam_ref_frame,
+                              const rclcpp::Time stamp) {
+  nav_msgs::msg::Odometry odom;
   odom.header.frame_id = slam_ref_frame;
   odom.header.stamp = stamp;
 
-  geometry_msgs::Pose rosPose;
+  geometry_msgs::msg::Pose rosPose;
   rosPose.position.x = pose.translation()[0];
   rosPose.position.y = pose.translation()[1];
   rosPose.position.z = pose.translation()[2];
@@ -59,7 +68,7 @@ nav_msgs::Odometry toRosOdom_(const SE3 &pose, const std::string slam_ref_frame,
   rosPose.orientation.y = quat.y();
   rosPose.orientation.z = quat.z();
   odom.pose.pose = rosPose;
-  boost::array<double, 36> cov;
+  std::array<double, 36> cov;
   for (int i = 0; i < 6; i++) {
     double var = 0.0;
     if (i < 3) {
@@ -79,18 +88,20 @@ nav_msgs::Odometry toRosOdom_(const SE3 &pose, const std::string slam_ref_frame,
   return odom;
 }
 
-visualization_msgs::MarkerArray
+visualization_msgs::msg::MarkerArray
 vizAllCentroidLandmarks(const std::vector<SE3> &allLandmarks,
                         const std::string &frame_id,
                         const std::vector<int> &allLabels) {
-  visualization_msgs::MarkerArray tMarkerArray;
-  visualization_msgs::Marker points;
+  visualization_msgs::msg::MarkerArray tMarkerArray;
+  visualization_msgs::msg::Marker points;
   int cylinderId = 0;
-  
-  // TODO(ankit): Add a flag to read yaml file from open_vocab or closed_vocab
-  YAML::Node cls_yaml_data = YAML::LoadFile(ros::package::getPath("object_modeller") + "/config/open_vocab_cls_all.yaml");
 
-  
+  // TODO(ankit): Add a flag to read yaml file from open_vocab or closed_vocab
+  YAML::Node cls_yaml_data = YAML::LoadFile(
+      ament_index_cpp::get_package_share_directory("object_modeller") +
+      "/config/open_vocab_cls_all.yaml");
+
+
 
   std::map<int, std::string> label_to_cls_name;
   std::map<int, std::vector<double>> label_to_cls_color;
@@ -103,7 +114,7 @@ vizAllCentroidLandmarks(const std::vector<SE3> &allLandmarks,
     int cls_id = it->second["id"].as<int>();
     std::string cls_name = it->first.as<std::string>();
     std::vector<double> cls_color = it->second["color"].as<std::vector<double>>();
-    
+
     label_to_cls_name[cls_id] = cls_name;
     label_to_cls_color[cls_id] = cls_color;
 
@@ -119,20 +130,20 @@ vizAllCentroidLandmarks(const std::vector<SE3> &allLandmarks,
 
   }
 
-      
+
   // visualize poses as chairs
   for (size_t i = 0; i < allLandmarks.size(); i++) {
     auto o = allLandmarks[i];
     int cur_label = allLabels[i];
-    geometry_msgs::Point pt;
+    geometry_msgs::msg::Point pt;
     auto obs_posit = o.translation();
-    visualization_msgs::Marker marker;
+    visualization_msgs::msg::Marker marker;
     marker.header.frame_id = frame_id;
-    marker.header.stamp = ros::Time();
+    marker.header.stamp = now_ros_time();
     marker.id = cylinderId;
     if (label_to_cls_mesh_path.find(cur_label) == label_to_cls_mesh_path.end()) {
-      marker.type = visualization_msgs::Marker::SPHERE;
-      marker.action = visualization_msgs::Marker::ADD;
+      marker.type = visualization_msgs::msg::Marker::SPHERE;
+      marker.action = visualization_msgs::msg::Marker::ADD;
 
       marker.scale.x = 0.5;
       marker.scale.y = 0.5;
@@ -144,8 +155,8 @@ vizAllCentroidLandmarks(const std::vector<SE3> &allLandmarks,
       marker.color.b = label_to_cls_color[cur_label][2];
 
     } else {
-      marker.type = visualization_msgs::Marker::MESH_RESOURCE;
-      marker.action = visualization_msgs::Marker::ADD;
+      marker.type = visualization_msgs::msg::Marker::MESH_RESOURCE;
+      marker.action = visualization_msgs::msg::Marker::ADD;
       marker.mesh_resource = label_to_cls_mesh_path[cur_label];
 
       marker.scale.x = label_to_mesh_scale_factor[cur_label] * fixed_dim;
@@ -180,13 +191,13 @@ vizAllCentroidLandmarks(const std::vector<SE3> &allLandmarks,
     marker.pose.orientation.w = q[3];
 
     // add text to show the label
-    visualization_msgs::Marker text_marker;
+    visualization_msgs::msg::Marker text_marker;
     text_marker.header.frame_id = frame_id;
-    text_marker.header.stamp = ros::Time();
+    text_marker.header.stamp = now_ros_time();
     text_marker.ns = "text";
     text_marker.id = cylinderId;
-    text_marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
-    text_marker.action = visualization_msgs::Marker::ADD;
+    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+    text_marker.action = visualization_msgs::msg::Marker::ADD;
     text_marker.pose.position.x = obs_posit[0];
     text_marker.pose.position.y = obs_posit[1];
     text_marker.pose.position.z = obs_posit[2] + 0.75;
@@ -210,22 +221,22 @@ vizAllCentroidLandmarks(const std::vector<SE3> &allLandmarks,
   return tMarkerArray;
 }
 
-visualization_msgs::MarkerArray vizTrajectory(const std::vector<SE3> &poses,
+visualization_msgs::msg::MarkerArray vizTrajectory(const std::vector<SE3> &poses,
                                               const std::string &frame_id,
                                               const int &robot_id) {
-  visualization_msgs::MarkerArray tMarkerArray;
-  visualization_msgs::Marker points, line_strip;
+  visualization_msgs::msg::MarkerArray tMarkerArray;
+  visualization_msgs::msg::Marker points, line_strip;
   points.header.frame_id = line_strip.header.frame_id = frame_id;
-  points.header.stamp = line_strip.header.stamp = ros::Time::now();
+  points.header.stamp = line_strip.header.stamp = now_ros_time();
   points.ns = line_strip.ns = "points_and_lines";
-  points.action = line_strip.action = visualization_msgs::Marker::ADD;
+  points.action = line_strip.action = visualization_msgs::msg::Marker::ADD;
   points.pose.orientation.w = line_strip.pose.orientation.w = 1.0;
 
   points.id = 1000;
   line_strip.id = 1001;
 
-  points.type = visualization_msgs::Marker::POINTS;
-  line_strip.type = visualization_msgs::Marker::LINE_STRIP;
+  points.type = visualization_msgs::msg::Marker::POINTS;
+  line_strip.type = visualization_msgs::msg::Marker::LINE_STRIP;
   // POINTS markers use x and y scale for width/height respectively
   points.scale.x = 0.05;
   points.scale.y = 0.05;
@@ -293,12 +304,12 @@ visualization_msgs::MarkerArray vizTrajectory(const std::vector<SE3> &poses,
     points.color.a = 1.0;
   }
 
-  // ROS_DEBUG_STREAM("Number of poses to be visualized is:" << poses.size());
+  // RCLCPP_DEBUG_STREAM(viz_logger(), "Number of poses to be visualized is:" << poses.size());
   double trajectory_length = 0;
   SE3 last_pose = SE3();
   for (auto o : poses) {
     // Between odom line strips
-    geometry_msgs::Point pt;
+    geometry_msgs::msg::Point pt;
     auto obs_posit = o.translation();
     pt.x = obs_posit[0];
     pt.y = obs_posit[1];
@@ -311,19 +322,19 @@ visualization_msgs::MarkerArray vizTrajectory(const std::vector<SE3> &poses,
     trajectory_length += cur_displacement;
     last_pose = o;
   }
-  
+
   tMarkerArray.markers.push_back(line_strip);
 
   if (false) {
     // visualize the first pose as a sphere
     if (poses.size() > 0) {
-      visualization_msgs::Marker first_pose_marker;
+      visualization_msgs::msg::Marker first_pose_marker;
       first_pose_marker.header.frame_id = frame_id;
-      first_pose_marker.header.stamp = ros::Time();
+      first_pose_marker.header.stamp = now_ros_time();
       first_pose_marker.ns = "points_and_lines";
       first_pose_marker.id = 0;
-      first_pose_marker.type = visualization_msgs::Marker::SPHERE;
-      first_pose_marker.action = visualization_msgs::Marker::ADD;
+      first_pose_marker.type = visualization_msgs::msg::Marker::SPHERE;
+      first_pose_marker.action = visualization_msgs::msg::Marker::ADD;
 
       first_pose_marker.pose.position.x = poses[0].translation()[0];
       first_pose_marker.pose.position.y = poses[0].translation()[1];
@@ -356,7 +367,7 @@ visualization_msgs::MarkerArray vizTrajectory(const std::vector<SE3> &poses,
         first_pose_marker.color.g = 0.0;
         first_pose_marker.color.b = 0.0;
       }
-      
+
 
       tMarkerArray.markers.push_back(first_pose_marker);
     }
@@ -364,14 +375,14 @@ visualization_msgs::MarkerArray vizTrajectory(const std::vector<SE3> &poses,
   return tMarkerArray;
 }
 
-visualization_msgs::MarkerArray
+visualization_msgs::msg::MarkerArray
 vizTrajectoryAndPoseInds(const std::vector<SE3> &poses,
                          const std::vector<size_t> &pose_inds,
                          const std::string &frame_id) {
-  visualization_msgs::MarkerArray tMarkerArray;
+  visualization_msgs::msg::MarkerArray tMarkerArray;
   // sanity check
   if (pose_inds.size() != poses.size()) {
-    ROS_ERROR_STREAM(
+    RCLCPP_ERROR_STREAM(viz_logger(),
         "vizTrajectoryAndPoseInds fail to due to pose_inds and poses having "
         "different sizes!!!");
     return tMarkerArray;
@@ -381,17 +392,17 @@ vizTrajectoryAndPoseInds(const std::vector<SE3> &poses,
     auto cur_pose = poses[i];
     auto cur_pose_ind = pose_inds[i];
 
-    
+
     // Between odom line strips
-    geometry_msgs::Point pt;
+    geometry_msgs::msg::Point pt;
     auto obs_posit = cur_pose.translation();
-    visualization_msgs::Marker marker;
+    visualization_msgs::msg::Marker marker;
     marker.header.frame_id = frame_id;
-    marker.header.stamp = ros::Time();
+    marker.header.stamp = now_ros_time();
     marker.ns = "traj_and_pose_inds";
     marker.id = cur_pose_ind;
-    marker.type = visualization_msgs::Marker::SPHERE;
-    marker.action = visualization_msgs::Marker::ADD;
+    marker.type = visualization_msgs::msg::Marker::SPHERE;
+    marker.action = visualization_msgs::msg::Marker::ADD;
     marker.pose.position.x = obs_posit[0];
     marker.pose.position.y = obs_posit[1];
     marker.pose.position.z = obs_posit[2];
@@ -412,16 +423,16 @@ vizTrajectoryAndPoseInds(const std::vector<SE3> &poses,
   return tMarkerArray;
 }
 
-geometry_msgs::PoseStamped makeROSPose(const SE3 &tf, std::string frame_id,
-                                       const ros::Time stamp) {
-  geometry_msgs::PoseStamped pose;
+geometry_msgs::msg::PoseStamped makeROSPose(const SE3 &tf, std::string frame_id,
+                                       const rclcpp::Time stamp) {
+  geometry_msgs::msg::PoseStamped pose;
   pose.header.stamp = stamp;
   pose.header.frame_id = frame_id;
   pose.pose = toRosPose_(tf);
   return pose;
 }
 
-SE3 toSE3(geometry_msgs::PoseStamped pose) {
+SE3 toSE3(geometry_msgs::msg::PoseStamped pose) {
   Vector3d pos;
   Quaterniond quat;
   tf2::fromMsg(pose.pose.position, pos);
@@ -434,18 +445,18 @@ SE3 toSE3(geometry_msgs::PoseStamped pose) {
   return tf;
 }
 void vizTreeModels(const std::vector<Cylinder> &scanTm,
-                   visualization_msgs::MarkerArray &tMarkerArray,
+                   visualization_msgs::msg::MarkerArray &tMarkerArray,
                    size_t &cylinderId) {
   for (const auto &tree : scanTm) {
     Scalar maxTreeRadius = 0.25;
     Scalar maxAxisTheta = 45;
-    visualization_msgs::Marker marker;
+    visualization_msgs::msg::Marker marker;
     // TODO(ankit): The frame_id should be passed as an argument
-    marker.header.frame_id = "quadrotor/map"; 
-    marker.header.stamp = ros::Time();
+    marker.header.frame_id = "quadrotor/map";
+    marker.header.stamp = now_ros_time();
     marker.id = cylinderId;
-    marker.type = visualization_msgs::Marker::CYLINDER;
-    marker.action = visualization_msgs::Marker::ADD;
+    marker.type = visualization_msgs::msg::Marker::CYLINDER;
+    marker.action = visualization_msgs::msg::Marker::ADD;
 
     // Center of cylinder
     // Shift the center of the cylinder to the center of the ray
@@ -453,7 +464,7 @@ void vizTreeModels(const std::vector<Cylinder> &scanTm,
     marker.pose.position.x = tree.model.root[0] + shift * tree.model.ray[0];
     marker.pose.position.y = tree.model.root[1] + shift * tree.model.ray[1];
     marker.pose.position.z = tree.model.root[2] + shift * tree.model.ray[2];
-    
+
 
     // Orientation of cylidner
     Vector3 src_vec(0, 0, 1);
@@ -485,51 +496,49 @@ void vizTreeModels(const std::vector<Cylinder> &scanTm,
     cylinderId++;
   }
 
-  // if we use ros::Time::now() instead of ros::Time(), the msg will
-  // automatically be overwritten, then maybe this is no longer needed? See
-  // vizCubeModels for example
+  // delete extras
   for (auto i = cylinderId; i < cylinderId + 50; ++i) {
-    visualization_msgs::Marker marker;
+    visualization_msgs::msg::Marker marker;
     marker.header.frame_id = "quadrotor/map";
-    marker.header.stamp = ros::Time();
+    marker.header.stamp = now_ros_time();
     marker.id = i;
-    marker.type = visualization_msgs::Marker::CYLINDER;
-    marker.action = visualization_msgs::Marker::DELETE;
+    marker.type = visualization_msgs::msg::Marker::CYLINDER;
+    marker.action = visualization_msgs::msg::Marker::DELETE;
     tMarkerArray.markers.push_back(marker);
   }
 }
 
 void vizCubeModels(const std::vector<Cube> &cubeModels,
-                   visualization_msgs::MarkerArray &tMarkerArray,
+                   visualization_msgs::msg::MarkerArray &tMarkerArray,
                    size_t &cubeId, const bool &is_global_map) {
   float scan_map_alpha = 0.6;
   float global_map_alpha = 0.6;
   float alpha;
   float red, blue, green;
-  ros::Time stamp;
+  rclcpp::Time stamp;
   // To differentiate from local map, global map will (1) be transparent, (2)
   // display permanently and (3) use different color
   if (is_global_map) {
     alpha = global_map_alpha;
-    stamp = ros::Time::now();
+    stamp = now_ros_time();
     red = 0.0;
     blue = 1.0;
     green = 0.0;
   } else {
     alpha = scan_map_alpha;
-    stamp = ros::Time::now();
+    stamp = now_ros_time();
     red = 0.5;
     blue = 0.5;
     green = 0.5;
   }
 
   for (const auto &cur_cube : cubeModels) {
-    visualization_msgs::Marker marker;
+    visualization_msgs::msg::Marker marker;
     marker.header.frame_id = "quadrotor/map";
     marker.header.stamp = stamp;
     marker.id = cubeId;
-    marker.type = visualization_msgs::Marker::CUBE;
-    marker.action = visualization_msgs::Marker::ADD;
+    marker.type = visualization_msgs::msg::Marker::CUBE;
+    marker.action = visualization_msgs::msg::Marker::ADD;
 
     // Center of cube
     marker.pose.position.x = cur_cube.model.pose.x();
@@ -558,20 +567,20 @@ void vizCubeModels(const std::vector<Cube> &cubeModels,
   }
 
   for (auto i = cubeId; i < cubeId + 100; ++i) {
-    visualization_msgs::Marker marker;
+    visualization_msgs::msg::Marker marker;
     marker.header.frame_id = "quadrotor/map";
-    marker.header.stamp = ros::Time();
+    marker.header.stamp = now_ros_time();
     marker.id = i;
-    marker.type = visualization_msgs::Marker::CUBE;
-    marker.action = visualization_msgs::Marker::DELETE;
+    marker.type = visualization_msgs::msg::Marker::CUBE;
+    marker.action = visualization_msgs::msg::Marker::DELETE;
     tMarkerArray.markers.push_back(marker);
   }
 }
 
-visualization_msgs::MarkerArray
+visualization_msgs::msg::MarkerArray
 vizGroundModel(const std::vector<Plane> &gplanes, const std::string &frame_id,
                int idx) {
-  visualization_msgs::MarkerArray groundModels;
+  visualization_msgs::msg::MarkerArray groundModels;
   for (const auto &g : gplanes) {
     auto gmodel = vizGroundModel(g, frame_id, idx);
     groundModels.markers.push_back(gmodel);
@@ -579,23 +588,23 @@ vizGroundModel(const std::vector<Plane> &gplanes, const std::string &frame_id,
   }
 
   for (auto i = idx; i < idx + 300; ++i) {
-    visualization_msgs::Marker marker;
+    visualization_msgs::msg::Marker marker;
     marker.header.frame_id = "quadrotor/map";
-    marker.header.stamp = ros::Time();
+    marker.header.stamp = now_ros_time();
     marker.id = i;
-    marker.type = visualization_msgs::Marker::CUBE;
-    marker.action = visualization_msgs::Marker::DELETE;
+    marker.type = visualization_msgs::msg::Marker::CUBE;
+    marker.action = visualization_msgs::msg::Marker::DELETE;
     marker.ns = "plane";
     groundModels.markers.push_back(marker);
   }
   return groundModels;
 }
-visualization_msgs::Marker vizGroundModel(const Plane &gplane,
+visualization_msgs::msg::Marker vizGroundModel(const Plane &gplane,
                                           const std::string &frame_id,
                                           const int idx) {
-  visualization_msgs::Marker cube;
-  cube.type = visualization_msgs::Marker::CUBE;
-  cube.action = visualization_msgs::Marker::ADD;
+  visualization_msgs::msg::Marker cube;
+  cube.type = visualization_msgs::msg::Marker::CUBE;
+  cube.action = visualization_msgs::msg::Marker::ADD;
   cube.id = idx;
   cube.ns = "plane";
   cube.scale.x = 2.5;
@@ -614,7 +623,7 @@ visualization_msgs::Marker vizGroundModel(const Plane &gplane,
   }
 
   cube.header.frame_id = frame_id;
-  cube.header.stamp = ros::Time();
+  cube.header.stamp = now_ros_time();
   cube.pose.position.x = gplane.model.centroid(0);
   cube.pose.position.y = gplane.model.centroid(1);
   cube.pose.position.z = gplane.model.centroid(2);
@@ -639,7 +648,7 @@ void landmarksToCloud(const std::vector<std::vector<TreeVertex>> &landmarks,
   std::mt19937 gen(rd());
   std::shuffle(color_values.begin(), color_values.end(), gen);
 
-  ROS_DEBUG_STREAM("Color values size: " << color_values.size());
+  RCLCPP_DEBUG_STREAM(viz_logger(), "Color values size: " << color_values.size());
   for (const auto &tree : landmarks) {
     if (tree[0].treeId == -1)
       continue;
@@ -658,14 +667,14 @@ void landmarksToCloud(const std::vector<std::vector<TreeVertex>> &landmarks,
   cloud->is_dense = false;
 }
 
-cv::Mat DecodeImage(const sensor_msgs::ImageConstPtr &image_msg) {
+cv::Mat DecodeImage(const sensor_msgs::msg::Image::ConstSharedPtr &image_msg) {
   cv::Mat image;
   cv_bridge::CvImagePtr input_bridge;
   try {
     input_bridge = cv_bridge::toCvCopy(image_msg, image_msg->encoding);
     image = input_bridge->image;
   } catch (cv_bridge::Exception &ex) {
-    ROS_ERROR("Failed to convert depth image");
+    RCLCPP_ERROR(viz_logger(), "Failed to convert depth image");
   }
   return image;
 }

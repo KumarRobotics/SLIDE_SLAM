@@ -8,6 +8,13 @@
 */
 
 #include <graphWrapper.h>
+#include <rclcpp/rclcpp.hpp>
+
+namespace {
+inline rclcpp::Logger gw_logger() {
+  return rclcpp::get_logger("SemanticFactorGraphWrapper");
+}
+}  // namespace
 
 SemanticFactorGraphWrapper::SemanticFactorGraphWrapper(int num_of_robots)
     : numRobots(num_of_robots) {
@@ -35,7 +42,7 @@ bool SemanticFactorGraphWrapper::addLoopClosureObservation(
   bool optimize = false;
 
   if (pose_counter_robot1_ == 0) {
-    ROS_ERROR_STREAM(
+    RCLCPP_ERROR_STREAM(gw_logger(),
         "ERROR: First pose should not be the loop closure pose!!!!!!!!!");
     return false;
   } else {
@@ -48,8 +55,9 @@ bool SemanticFactorGraphWrapper::addLoopClosureObservation(
                          loopClosureFound, loop_closure_relative_pose,
                          closure_matched_pose_idx);
     pose_counter_robot1_++;
-    ROS_INFO_STREAM("Running factor-graph optimization, pose counter is: "
-                    << pose_counter_robot1_);
+    RCLCPP_INFO_STREAM(gw_logger(),
+                       "Running factor-graph optimization, pose counter is: "
+                           << pose_counter_robot1_);
     solve();
     return true;
   }
@@ -76,7 +84,7 @@ bool SemanticFactorGraphWrapper::addSLOAMObservation(
   if (pose_counter == 0) {
     // set priors for the first pose
     setPriors(curr_pose, robotID);
-    ROS_WARN_STREAM(
+    RCLCPP_WARN_STREAM(gw_logger(),
         "EROOR: Factor graph optimization is done when adding the first "
         "pose prior, this may cause problems!!!");
   } else {
@@ -250,7 +258,7 @@ void SemanticFactorGraphWrapper::getCurrPose(
   bool pose_valid = getPose(pose_counter - 1, robotID, pose);
   curr_pose = SE3(pose.matrix());
   if (!pose_valid) {
-    ROS_ERROR_STREAM(
+    RCLCPP_ERROR_STREAM(gw_logger(),
         "getCurrPose fail to fetch pose for pose_idx : " << pose_counter - 1);
   }
   if (cov) {
@@ -267,7 +275,7 @@ bool SemanticFactorGraphWrapper::getPoseByID(SE3 &curr_pose,
   bool pose_valid = getPose(poseID, 0, pose);
   curr_pose = SE3(pose.matrix());
   if (!pose_valid) {
-    ROS_ERROR_STREAM(
+    RCLCPP_ERROR_STREAM(gw_logger(),
         "getPoseByID fail to fetch pose for pose_idx : " << poseID);
     return false;
   } else {
@@ -284,9 +292,9 @@ void SemanticFactorGraphWrapper::getAllPoses(std::vector<SE3> &optimized_poses,
     gtsam::Pose3 pose;
     bool pose_valid = getPose(i, robotID, pose);
     if (!pose_valid) {
-      ROS_ERROR_STREAM(
+      RCLCPP_ERROR_STREAM(gw_logger(),
           "MAJOR ERROR: getAllPoses fail to fetch pose for pose_idx: " << i);
-      ROS_ERROR("YOU MUST CORRECT THIS ERROR!!!");
+      RCLCPP_ERROR(gw_logger(), "YOU MUST CORRECT THIS ERROR!!!");
     } else {
       optimized_poses.push_back(SE3(pose.matrix()));
       pose_inds.push_back(i);
@@ -295,7 +303,7 @@ void SemanticFactorGraphWrapper::getAllPoses(std::vector<SE3> &optimized_poses,
 
   // sanity check
   if (pose_inds.size() != optimized_poses.size()) {
-    ROS_ERROR_STREAM(
+    RCLCPP_ERROR_STREAM(gw_logger(),
         "ERROR: getAllPoses fail to due to pose_inds and optimized_poses "
         "having "
         "different sizes!!!");
@@ -327,7 +335,7 @@ void SemanticFactorGraphWrapper::getAllCentroidLandmarks(
     if (landmark_position.x() == gtsam::Point3().x() &&
         landmark_position.y() == gtsam::Point3().y() &&
         landmark_position.z() == gtsam::Point3().z()) {
-      ROS_INFO_STREAM("fail to fetch landmark idx: " << i);
+      RCLCPP_INFO_STREAM(gw_logger(), "fail to fetch landmark idx: " << i);
     } else {
       gtsam::Pose3 landmark_pose =
           gtsam::Pose3(gtsam::Rot3(), landmark_position);
@@ -353,7 +361,7 @@ void SemanticFactorGraphWrapper::getAllCentroidLandmarksAndLabels(
         landmark_labels.push_back(point_landmark_labels_[i]);
       } else {
         landmark_labels.push_back(-1);
-        ROS_ERROR_STREAM(
+        RCLCPP_ERROR_STREAM(gw_logger(),
             "ERROR: point_landmark_labels_ is not the same size as "
             "point_landmark_counter_, which is abnormal!!!");
       }

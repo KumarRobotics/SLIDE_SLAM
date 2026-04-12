@@ -11,87 +11,100 @@
 
 #include <chrono>
 
+namespace {
+template <typename ParamT>
+ParamT pr_declare_or_get(rclcpp::Node *node, const std::string &name,
+                         const ParamT &default_value) {
+  if (!node->has_parameter(name)) {
+    return node->declare_parameter<ParamT>(name, default_value);
+  }
+  return node->get_parameter(name).get_value<ParamT>();
+}
+}  // namespace
+
 // define the constructor of the class GraphMatchNode
-PlaceRecognition::PlaceRecognition(const ros::NodeHandle &nh) : nh_(nh) {
+PlaceRecognition::PlaceRecognition(rclcpp::Node *node) : node_(node) {
   ns_prefix_ = "place_recognition";
   // create a publisher for visualizing the matching results
-  viz_pub_ = nh_.advertise<visualization_msgs::MarkerArray>(
+  viz_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>(
       ns_prefix_ + "/matching_results", 1);
   ParamInit();
 }
 
 // define the ParamInit function
 void PlaceRecognition::ParamInit() {
-  nh_.param<bool>(ns_prefix_ + "/visualize_matching_results",
-                  visualize_matching_results, false);
-  nh_.param<double>(ns_prefix_ + "/compute_budget_sec", compute_budget_sec_,
-                    5.0);
-  nh_.param<double>(ns_prefix_ + "/dilation_factor", dilation_factor_, 1.2);
-  nh_.param<double>(ns_prefix_ + "/search_xy_step_size", match_xy_step_size_,
-                    0.5);
-  double match_yaw_half_range_degrees;
-  nh_.param<double>(ns_prefix_ + "/match_yaw_half_range",
-                    match_yaw_half_range_degrees, 180.);
+  visualize_matching_results = pr_declare_or_get<bool>(
+      node_, ns_prefix_ + "/visualize_matching_results", false);
+  compute_budget_sec_ = pr_declare_or_get<double>(
+      node_, ns_prefix_ + "/compute_budget_sec", 5.0);
+  dilation_factor_ =
+      pr_declare_or_get<double>(node_, ns_prefix_ + "/dilation_factor", 1.2);
+  match_xy_step_size_ = pr_declare_or_get<double>(
+      node_, ns_prefix_ + "/search_xy_step_size", 0.5);
+  double match_yaw_half_range_degrees = pr_declare_or_get<double>(
+      node_, ns_prefix_ + "/match_yaw_half_range", 180.0);
   match_yaw_half_range_ = match_yaw_half_range_degrees * M_PI / 180.;
-  nh_.param<bool>(ns_prefix_ + "/disable_yaw_search", disable_yaw_search_,
-                  false);
-  double match_yaw_step_size_degrees;
-  nh_.param<double>(ns_prefix_ + "/search_yaw_step_size_degrees",
-                    match_yaw_step_size_degrees, 2.0);
+  disable_yaw_search_ = pr_declare_or_get<bool>(
+      node_, ns_prefix_ + "/disable_yaw_search", false);
+  double match_yaw_step_size_degrees = pr_declare_or_get<double>(
+      node_, ns_prefix_ + "/search_yaw_step_size_degrees", 2.0);
   match_yaw_angle_step_size_ = match_yaw_step_size_degrees * M_PI / 180.;
-  nh_.param<double>(ns_prefix_ + "/match_threshold_position", match_threshold_,
-                    0.5);
-  nh_.param<double>(ns_prefix_ + "/match_threshold_dimension",
-                    match_threshold_dimension_, 1.0);
-  nh_.param<bool>(ns_prefix_ + "/ignore_dimension", ignore_dimension_, false);
-  nh_.param<double>(ns_prefix_ + "/min_loop_closure_overlap_percentage",
-                    min_loop_closure_overlap_percentage_, 0.1);
+  match_threshold_ = pr_declare_or_get<double>(
+      node_, ns_prefix_ + "/match_threshold_position", 0.5);
+  match_threshold_dimension_ = pr_declare_or_get<double>(
+      node_, ns_prefix_ + "/match_threshold_dimension", 1.0);
+  ignore_dimension_ = pr_declare_or_get<bool>(
+      node_, ns_prefix_ + "/ignore_dimension", false);
+  min_loop_closure_overlap_percentage_ = pr_declare_or_get<double>(
+      node_, ns_prefix_ + "/min_loop_closure_overlap_percentage", 0.1);
   // min_num_inliers
-  nh_.param<int> (ns_prefix_ + "/min_num_inliers", min_num_inliers_, 5);
-  nh_.param<bool>(ns_prefix_ + "/use_nonlinear_least_squares", use_lsq, true);
-  nh_.param<int>(ns_prefix_ + "/min_num_map_objects_to_start", slidematch_min_num_map_objects_to_start_, true);
-  nh_.param<double>(ns_prefix_ + "/match_x_half_range_intra",
-                    match_x_half_range_intra_, 5.0);
-  nh_.param<double>(ns_prefix_ + "/match_y_half_range_intra",
-                    match_y_half_range_intra_, 5.0);
-  double match_yaw_half_range_degrees_intra;
-  nh_.param<double>(ns_prefix_ + "/match_yaw_half_range_intra",
-                    match_yaw_half_range_degrees_intra, 10.);
+  min_num_inliers_ =
+      pr_declare_or_get<int>(node_, ns_prefix_ + "/min_num_inliers", 5);
+  use_lsq = pr_declare_or_get<bool>(
+      node_, ns_prefix_ + "/use_nonlinear_least_squares", true);
+  slidematch_min_num_map_objects_to_start_ = pr_declare_or_get<int>(
+      node_, ns_prefix_ + "/min_num_map_objects_to_start", 1);
+  match_x_half_range_intra_ = pr_declare_or_get<double>(
+      node_, ns_prefix_ + "/match_x_half_range_intra", 5.0);
+  match_y_half_range_intra_ = pr_declare_or_get<double>(
+      node_, ns_prefix_ + "/match_y_half_range_intra", 5.0);
+  double match_yaw_half_range_degrees_intra = pr_declare_or_get<double>(
+      node_, ns_prefix_ + "/match_yaw_half_range_intra", 10.0);
   match_yaw_half_range_intra_ =
       match_yaw_half_range_degrees_intra * M_PI / 180.;
   match_yaw_half_range_intra_ =
       match_yaw_half_range_degrees_intra * M_PI / 180.;
   // slidegraph namespace is ns_prefix_ + _slidegraph
   std::string slidegraph_ns = ns_prefix_ + "_slidegraph";
-  nh_.param<int>(slidegraph_ns + "/num_inliners_threshold",
-                    slidegraph_num_inliners_, 10.);
-  nh_.param<double>(slidegraph_ns + "/descriptor_matching_threshold",
-                    slidegraph_matching_threshold_, 0.1);
-  nh_.param<double>(slidegraph_ns + "/sigma",
-                    slidegraph_sigma_, 0.1);
-  nh_.param<double>(slidegraph_ns + "/epsilon",
-                    slidegraph_epsilon_, 0.1);
-  nh_.param<int>(slidegraph_ns + "/min_num_map_objects_to_start",
-                    slidegraph_min_num_map_objects_to_start_, 20);
+  slidegraph_num_inliners_ = pr_declare_or_get<int>(
+      node_, slidegraph_ns + "/num_inliners_threshold", 10);
+  slidegraph_matching_threshold_ = pr_declare_or_get<double>(
+      node_, slidegraph_ns + "/descriptor_matching_threshold", 0.1);
+  slidegraph_sigma_ =
+      pr_declare_or_get<double>(node_, slidegraph_ns + "/sigma", 0.1);
+  slidegraph_epsilon_ =
+      pr_declare_or_get<double>(node_, slidegraph_ns + "/epsilon", 0.1);
+  slidegraph_min_num_map_objects_to_start_ = pr_declare_or_get<int>(
+      node_, slidegraph_ns + "/min_num_map_objects_to_start", 20);
 
   printParams();
 }
 
 void PlaceRecognition::printParams() {
-  ROS_INFO_STREAM("[PlaceRecognition]: visualize_matching_results: " << visualize_matching_results);
-  ROS_INFO_STREAM("[PlaceRecognition]: compute_budget_sec_: " << compute_budget_sec_);
-  ROS_INFO_STREAM("[PlaceRecognition]: dilation_factor_: " << dilation_factor_);
-  ROS_INFO_STREAM("[PlaceRecognition]: match_xy_step_size_: " << match_xy_step_size_);
-  ROS_INFO_STREAM("[PlaceRecognition]: match_yaw_half_range_: " << match_yaw_half_range_);
-  ROS_INFO_STREAM("[PlaceRecognition]: disable_yaw_search_: " << disable_yaw_search_);
-  ROS_INFO_STREAM("[PlaceRecognition]: match_yaw_angle_step_size_: " << match_yaw_angle_step_size_);
-  ROS_INFO_STREAM("[PlaceRecognition]: match_threshold_: " << match_threshold_);
-  ROS_INFO_STREAM("[PlaceRecognition]: match_threshold_dimension_: " << match_threshold_dimension_);
-  ROS_INFO_STREAM("[PlaceRecognition]: ignore_dimension_: " << ignore_dimension_);
-  // ROS_INFO_STREAM("[PlaceRecognition]: min_loop_closure_overlap_percentage_: "
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: visualize_matching_results: " << visualize_matching_results);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: compute_budget_sec_: " << compute_budget_sec_);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: dilation_factor_: " << dilation_factor_);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: match_xy_step_size_: " << match_xy_step_size_);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: match_yaw_half_range_: " << match_yaw_half_range_);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: disable_yaw_search_: " << disable_yaw_search_);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: match_yaw_angle_step_size_: " << match_yaw_angle_step_size_);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: match_threshold_: " << match_threshold_);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: match_threshold_dimension_: " << match_threshold_dimension_);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: ignore_dimension_: " << ignore_dimension_);
+  // RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: min_loop_closure_overlap_percentage_: "
   //                 << min_loop_closure_overlap_percentage_);
-  ROS_INFO_STREAM("[PlaceRecognition]: min_num_inliers_: " << min_num_inliers_);
-  ROS_INFO_STREAM("[PlaceRecognition]: use_lsq: " << use_lsq);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: min_num_inliers_: " << min_num_inliers_);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: use_lsq: " << use_lsq);
 }
 
 // define the match_maps function
@@ -168,7 +181,7 @@ void PlaceRecognition::MatchMaps(
   // outer_loop_step_size_y are larger than match_xy_step_size_
   if (outer_loop_step_size_x < match_xy_step_size_ ||
       outer_loop_step_size_y < match_xy_step_size_) {
-    ROS_ERROR(
+    RCLCPP_ERROR(node_->get_logger(),
         "Outer loop step size is smaller than match_xy_step_size_, this should "
         "not happen");
     return;
@@ -185,12 +198,12 @@ void PlaceRecognition::MatchMaps(
             .count();
     // check if we have exceeded the time budget
     if (duration > compute_budget_sec_) {
-      ROS_WARN_STREAM(
+      RCLCPP_WARN_STREAM(node_->get_logger(),
           "Exceeded the time budget, break the loop, current duration is: "
           << duration << " seconds, and current step is: " << cur_step);
       break;
     } else {
-      ROS_INFO_STREAM("[PlaceRecognition]: Time taken up till now is: "
+      RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: Time taken up till now is: "
                       << duration
                       << " seconds, and current step is: " << cur_step);
     }
@@ -218,7 +231,7 @@ void PlaceRecognition::MatchMaps(
     // this is also the start (left boundary) of the previous step in the
     // negative direction
     double y_left_boundary_prev = -cur_step_double * outer_loop_step_size_y;
-    ROS_INFO_STREAM("[PlaceRecognition]: Current region boundaries: x_positive_start: "
+    RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: Current region boundaries: x_positive_start: "
                     << x_positive_start
                     << ", x_positive_end: " << x_positive_end
                     << ", x_negative_start: " << x_negative_start
@@ -373,9 +386,9 @@ void PlaceRecognition::MatchMaps(
     }
   } 
   // print the best number of inliers ROS INFO
-  ROS_INFO_STREAM("[PlaceRecognition]: best number of inliers: " << best_num_inliers);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: best number of inliers: " << best_num_inliers);
   // print the best transformation matrix
-  ROS_INFO_STREAM("[PlaceRecognition]: best transformation matrix: " << best_R_t);
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: best transformation matrix: " << best_R_t);
   // assign the best transformation matrix to R_t_out
   R_t_out = best_R_t;
   // assign the best number of inliers to best_num_inliers_out
@@ -390,22 +403,23 @@ bool PlaceRecognition::findIntraLoopClosure(
     const std::vector<Eigen::Vector7d> &measurements,
     const std::vector<Eigen::Vector7d> &submap, const SE3 &query_pose,
     const SE3 &candidate_pose, Eigen::Matrix4d &tfFromQuery2Candidate) {
-  ROS_INFO_THROTTLE(3.0, "[findLoopClosure] findLoopClosure Thread Running");
+  RCLCPP_INFO_THROTTLE(node_->get_logger(), *node_->get_clock(), 3000,
+                       "[findLoopClosure] findLoopClosure Thread Running");
   // end the loop closure if the minimal requirements not met
   if (measurements.size() == 0 || submap.size() == 0) {
-    ROS_INFO("[findLoopClosure] measurements or submap is empty");
+    RCLCPP_INFO(node_->get_logger(),"[findLoopClosure] measurements or submap is empty");
     return false;
   }
   int number_of_measurements = measurements.size();
   if (number_of_measurements < 4) {
-    ROS_WARN_STREAM("[PlaceRecognition]: number of detected objects is less than 4, it is: "
+    RCLCPP_WARN_STREAM(node_->get_logger(),"[PlaceRecognition]: number of detected objects is less than 4, it is: "
                     << number_of_measurements);
     return false;
   } else {
-    ROS_INFO_STREAM("[PlaceRecognition]: number of detected objects used for loop closure is: "
+    RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: number of detected objects used for loop closure is: "
                     << number_of_measurements);
   }
-  // ROS_INFO_STREAM(
+  // RCLCPP_INFO_STREAM(node_->get_logger(),
   //     "number of object in submap used for loop closure is: " << submap.size());
   // rotate the measurements into map frame as they are in local frame
   // currently
@@ -447,7 +461,7 @@ bool PlaceRecognition::findIntraLoopClosure(
       submap, measurements_transformed_to_map_frame, xyzYaw_out, transform_out);
   // check if the closure is found
   if (!closure_found) {
-    ROS_INFO(
+    RCLCPP_INFO(node_->get_logger(),
         "[findLoopClosure] no loop closure found due to not enough inliers");
     return false;
   }
@@ -471,9 +485,9 @@ bool PlaceRecognition::findIntraLoopClosure(
 
   // // construct a SE3 using loop_closed_rotation_matrix and the
   // // position_estimate_out
-  // ROS_ERROR_STREAM("[PlaceRecognition]: position_estimate_out is: " << position_estimate_out);
-  // ROS_ERROR_STREAM("[PlaceRecognition]: yaw_estimate_out is: " << yaw_estimate_out);
-  // ROS_ERROR_STREAM("[PlaceRecognition]: loop_closure_transform is: " << loop_closure_transform);
+  // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: position_estimate_out is: " << position_estimate_out);
+  // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: yaw_estimate_out is: " << yaw_estimate_out);
+  // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: loop_closure_transform is: " << loop_closure_transform);
 
   SE3 tfFromQueryDrifted2CandidateSE3 = candidate_pose.inverse() * query_pose;
 
@@ -484,11 +498,11 @@ bool PlaceRecognition::findIntraLoopClosure(
   SE3 tfFromQueryCorrect2CandidateSE3 =
       tfFromQueryDrifted2CandidateSE3 * loop_closure_transform_SE3;
 
-  // ROS_ERROR_STREAM("[PlaceRecognition]: tfFromQueryCorrect2CandidateSE3 is: "
+  // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: tfFromQueryCorrect2CandidateSE3 is: "
   //                  << tfFromQueryCorrect2CandidateSE3.matrix());
   // // candidate_pose
-  // ROS_ERROR_STREAM("[PlaceRecognition]: candidate_pose is: " << candidate_pose.matrix());
-  // ROS_ERROR_STREAM("[PlaceRecognition]: query_pose is: " << query_pose.matrix());
+  // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: candidate_pose is: " << candidate_pose.matrix());
+  // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: query_pose is: " << query_pose.matrix());
 
   tfFromQuery2Candidate =
       tfFromQueryCorrect2CandidateSE3.matrix().cast<double>();
@@ -507,18 +521,18 @@ bool PlaceRecognition::findInterLoopClosure(
   // only call the findTransformation function if the number of objects in both maps exceed the slidematch_min_num_map_objects_to_start_
   if (reference_objects.size() < slidematch_min_num_map_objects_to_start_ ||
       query_objects.size() < slidematch_min_num_map_objects_to_start_) {
-    ROS_WARN_STREAM("[PlaceRecognition]: number of objects in reference_objects or query_objects is less than slidematch_min_num_map_objects_to_start_");
+    RCLCPP_WARN_STREAM(node_->get_logger(),"[PlaceRecognition]: number of objects in reference_objects or query_objects is less than slidematch_min_num_map_objects_to_start_");
   } else {
     closure_found = findTransformation(reference_objects, query_objects,
                                             xyzYaw_out, transform_out);
   }
   if (!closure_found) {
-    ROS_ERROR(
+    RCLCPP_ERROR(node_->get_logger(),
         "[findInterLoopClosure] no loop closure found due to not enough "
         "inliers");
     return false;
   } else {
-    ROS_INFO("[findInterLoopClosure] SUCCESS: loop closure found!");
+    RCLCPP_INFO(node_->get_logger(),"[findInterLoopClosure] SUCCESS: loop closure found!");
     // compose a transformation matrix
     double x = xyzYaw_out[0];
     double y = xyzYaw_out[1];
@@ -569,10 +583,10 @@ bool PlaceRecognition::findInterLoopClosureWithClipper(
     double matching_threshold = slidegraph_matching_threshold_;
 
     // print the params in ROS_ERROR_STREAM
-    // ROS_ERROR_STREAM("[PlaceRecognition]: sigma is: " << sigma);
-    // ROS_ERROR_STREAM("[PlaceRecognition]: epsilon is: " << epsilon);
-    // ROS_ERROR_STREAM("[PlaceRecognition]: min_num_pairs is: " << min_num_pairs);
-    // ROS_ERROR_STREAM("[PlaceRecognition]: matching_threshold is: " << matching_threshold);
+    // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: sigma is: " << sigma);
+    // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: epsilon is: " << epsilon);
+    // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: min_num_pairs is: " << min_num_pairs);
+    // RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: matching_threshold is: " << matching_threshold);
 
     // convert the reference_objects and query_objects to semantic_clipper
     // argument format
@@ -582,7 +596,7 @@ bool PlaceRecognition::findInterLoopClosureWithClipper(
       // check if the object has 0 in its coordinates, if so skip it since it is
       // not valid
       if (reference_objects[i][1] == 0.0 && reference_objects[i][2] == 0.0) {
-        ROS_ERROR_STREAM(
+        RCLCPP_ERROR_STREAM(node_->get_logger(),
             "reference object has 0 in its coordinates, skipping it");
         continue;
       }
@@ -599,7 +613,7 @@ bool PlaceRecognition::findInterLoopClosureWithClipper(
   for (int i = 0; i < query_objects.size(); i++) {
     // check if the object has 0 in its coordinates, if so skip it since it is not valid
     if (query_objects[i][1] == 0.0 && query_objects[i][2] == 0.0) {
-      ROS_ERROR_STREAM("[PlaceRecognition]: query object has 0 in its coordinates, skipping it");
+      RCLCPP_ERROR_STREAM(node_->get_logger(),"[PlaceRecognition]: query object has 0 in its coordinates, skipping it");
       continue;
     }
     std::vector<double> object;
@@ -616,14 +630,14 @@ bool PlaceRecognition::findInterLoopClosureWithClipper(
   bool found = false;
   // make sure we have at least slidegraph_min_num_map_objects_to_start_ objects to do the matching in both the reference and query
   if (reference_objects_vector.size() >= slidegraph_min_num_map_objects_to_start_ && query_objects_vector.size() >= slidegraph_min_num_map_objects_to_start_) {
-    // ROS_WARN_STREAM("[PlaceRecognition]: reference_objects_vector size is: " << reference_objects_vector.size() << " and query_objects_vector size is: " << query_objects_vector.size());
-    ROS_WARN("Calling CLIPPER for inter loop closure, if anything bad happens, look into that piece of code...");
+    // RCLCPP_WARN_STREAM(node_->get_logger(),"[PlaceRecognition]: reference_objects_vector size is: " << reference_objects_vector.size() << " and query_objects_vector size is: " << query_objects_vector.size());
+    RCLCPP_WARN(node_->get_logger(),"Calling CLIPPER for inter loop closure, if anything bad happens, look into that piece of code...");
     found = semantic_clipper::run_semantic_clipper(reference_objects_vector, query_objects_vector, tfFromQueryToRef, sigma, epsilon, min_num_pairs, matching_threshold);
-    ROS_DEBUG("EXIT CLIPPER SUCCESSFULLY");
+    RCLCPP_DEBUG(node_->get_logger(),"EXIT CLIPPER SUCCESSFULLY");
     // get the inverse of the transformation matrix
     tfFromQueryToRef = tfFromQueryToRef.inverse();
   } else {
-    ROS_WARN_STREAM("[PlaceRecognition]: Not enough objects to start the place recognition,  slidegraph_min_num_map_objects_to_start_ is set as " << slidegraph_min_num_map_objects_to_start_ << " but the reference_objects_vector size is: " << reference_objects_vector.size() << " and query_objects_vector size is: " << query_objects_vector.size());
+    RCLCPP_WARN_STREAM(node_->get_logger(),"[PlaceRecognition]: Not enough objects to start the place recognition,  slidegraph_min_num_map_objects_to_start_ is set as " << slidegraph_min_num_map_objects_to_start_ << " but the reference_objects_vector size is: " << reference_objects_vector.size() << " and query_objects_vector size is: " << query_objects_vector.size());
   }  
   return found;
 }
@@ -687,7 +701,7 @@ void PlaceRecognition::solveLSQ(
 
   // Compute the translation vector t
   Eigen::Vector3d t = centroidTarget - R * centroidSource;
-  ROS_WARN_STREAM("[PlaceRecognition]: The translation vector in solveLSQ is: " << t.transpose());
+  RCLCPP_WARN_STREAM(node_->get_logger(),"[PlaceRecognition]: The translation vector in solveLSQ is: " << t.transpose());
   transform_out = Eigen::Matrix4d::Identity();
   transform_out.block<3, 3>(0, 0) = R;
   transform_out.block<3, 1>(0, 3) = t;
@@ -743,7 +757,7 @@ bool PlaceRecognition::findTransformation(
   std::vector<Eigen::Vector7d> reference_objects;
   std::vector<Eigen::Vector7d> query_objects;
   if (inter_loop_closure) {
-    ROS_INFO(
+    RCLCPP_INFO(node_->get_logger(),
         "[findTransformation] running INTER (multi-robot) loop closure, doing "
         "preprocessing to zero center the maps and reduce search region");
     // preprocess step to reduce search region by centering the
@@ -788,16 +802,16 @@ bool PlaceRecognition::findTransformation(
 
     // print the centroid difference
     Eigen::Vector2d centroid_diff = centroid_reference - centroid_query;
-    ROS_WARN_STREAM("[PlaceRecognition]: centroid diff between the two maps in x and y is: "
+    RCLCPP_WARN_STREAM(node_->get_logger(),"[PlaceRecognition]: centroid diff between the two maps in x and y is: "
                     << centroid_diff[0] << " " << centroid_diff[1]);
 
-    ROS_WARN_STREAM(
+    RCLCPP_WARN_STREAM(node_->get_logger(),
         "Auto computed the bounding (candidate loop closure) region of the two "
         "maps, the half range in x and y is: "
         << match_x_half_range_ << " " << match_y_half_range_
         << " (with dilation factor: " << dilation_factor_ << ")");
   } else {
-    ROS_INFO(
+    RCLCPP_INFO(node_->get_logger(),
         "[findTransformation] running INTRA loop closure, no preprocessing "
         "needed");
     // if it is intra loop closure, we do not need to preprocess the data
@@ -808,7 +822,7 @@ bool PlaceRecognition::findTransformation(
     match_x_half_range_ = match_x_half_range_intra_;
     match_y_half_range_ = match_y_half_range_intra_;
     match_yaw_half_range_ = match_yaw_half_range_intra_;
-    ROS_WARN_STREAM(
+    RCLCPP_WARN_STREAM(node_->get_logger(),
         "Using the intra loop closure parameters, the half range in x, y, and "
         "yaw is: "
         << match_x_half_range_ << " " << match_y_half_range_ << " "
@@ -819,22 +833,22 @@ bool PlaceRecognition::findTransformation(
   int best_num_inliers_out = 0;
   std::vector<Eigen::Vector4d> map_objects_matched_out;
   std::vector<Eigen::Vector4d> detection_objects_matched_out;
-  ROS_DEBUG_STREAM("[PlaceRecognition]: Ready to run MatchMaps, which costs time...");
+  RCLCPP_DEBUG_STREAM(node_->get_logger(),"[PlaceRecognition]: Ready to run MatchMaps, which costs time...");
 
   // the input of matchmaps is vector7d label x y z dim1 dim2 dim3
   // the output map_objects_matched_out from matchmaps is vector 3d label x y
   MatchMaps(reference_objects, query_objects, R_t_out, best_num_inliers_out,
             map_objects_matched_out, detection_objects_matched_out);
 
-  ROS_DEBUG_STREAM("[PlaceRecognition]: PRINT SOME RESULTS FROM MATCHESMAP");
+  RCLCPP_DEBUG_STREAM(node_->get_logger(),"[PlaceRecognition]: PRINT SOME RESULTS FROM MATCHESMAP");
   for (int i = 0; i < map_objects_matched_out.size(); i++) {
-    ROS_DEBUG_STREAM("[PlaceRecognition]: map_objects_matched_out: "
+    RCLCPP_DEBUG_STREAM(node_->get_logger(),"[PlaceRecognition]: map_objects_matched_out: "
                      << map_objects_matched_out[i][0] << " "
                      << map_objects_matched_out[i][1] << " "
                      << map_objects_matched_out[i][2]);
   }
 
-  ROS_DEBUG_STREAM("[PlaceRecognition]: MatchMaps finished...");
+  RCLCPP_DEBUG_STREAM(node_->get_logger(),"[PlaceRecognition]: MatchMaps finished...");
   // check if the best_num_inliers_out is less than
   // min_num_inliers_for_valid_closure_
   // UPDATE: NO LONGER USING THE OVERLAP THRESHOLD SINCE IT IS NON INTUITIVE TO THE USER
@@ -847,17 +861,17 @@ bool PlaceRecognition::findTransformation(
   // make min_num_inliners at least one to avoid division by zero
   // min_num_inliners = std::max(min_num_inliners, 1.0);
   if (best_num_inliers_out < min_num_inliners) {
-    ROS_WARN_STREAM("[PlaceRecognition]: Not enough inliers found, best_num_inliers_out is: "
+    RCLCPP_WARN_STREAM(node_->get_logger(),"[PlaceRecognition]: Not enough inliers found, best_num_inliers_out is: "
                     << best_num_inliers_out);
-    ROS_WARN_STREAM(
+    RCLCPP_WARN_STREAM(node_->get_logger(),
         "min_num_inliners is: "
         << min_num_inliners
         << " YOU CAN TUNE THE PARAMETER IN THE YAML FILE (min_num_inliers)");
     return false;
   } else {
-    ROS_INFO_STREAM("[PlaceRecognition]: Enough inliers found, best_num_inliers_out is: "
+    RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: Enough inliers found, best_num_inliers_out is: "
                     << best_num_inliers_out);
-    ROS_INFO_STREAM(
+    RCLCPP_INFO_STREAM(node_->get_logger(),
         "actual overlap percentage is: "
         << static_cast<double>(best_num_inliers_out) /
                static_cast<double>(
@@ -865,7 +879,7 @@ bool PlaceRecognition::findTransformation(
   }
 
   if (visualize_matching_results) {
-    ROS_WARN_STREAM("[PlaceRecognition]: Visualizing the place recognition matching results...");
+    RCLCPP_WARN_STREAM(node_->get_logger(),"[PlaceRecognition]: Visualizing the place recognition matching results...");
     // take the first 4 dims out of query_objects
     std::vector<Eigen::Vector4d> query_objects_vis;
     for (int i = 0; i < query_objects.size(); i++) {
@@ -973,11 +987,11 @@ void PlaceRecognition::VisualizeMatchingResults(
     const std::vector<Eigen::Vector4d> &all_detection_objects,
     Eigen::Matrix3d &R_t) {
   // create a marker array
-  visualization_msgs::MarkerArray matching_results;
+  visualization_msgs::msg::MarkerArray matching_results;
   // create a marker for each map object
   for (int i = 0; i < map_objects_matched.size(); i++) {
     // create a marker
-    visualization_msgs::Marker cur_marker;
+    visualization_msgs::msg::Marker cur_marker;
     // set the header
     cur_marker.header.frame_id = vis_ref_frame_;
     // set the namespace
@@ -985,9 +999,9 @@ void PlaceRecognition::VisualizeMatchingResults(
     // set the id
     cur_marker.id = i;
     // set the type
-    cur_marker.type = visualization_msgs::Marker::CUBE;
+    cur_marker.type = visualization_msgs::msg::Marker::CUBE;
     // set the action
-    cur_marker.action = visualization_msgs::Marker::ADD;
+    cur_marker.action = visualization_msgs::msg::Marker::ADD;
     // set the pose
     cur_marker.pose.position.x = map_objects_matched[i][1];
     cur_marker.pose.position.y = map_objects_matched[i][2];
@@ -1011,7 +1025,7 @@ void PlaceRecognition::VisualizeMatchingResults(
   // draw the line between each pair of matched objects and detected_objects
   for (int i = 0; i < map_objects_matched.size(); i++) {
     // create a marker
-    visualization_msgs::Marker cur_marker;
+    visualization_msgs::msg::Marker cur_marker;
     // set the header
     cur_marker.header.frame_id = vis_ref_frame_;
     // set the namespace
@@ -1019,9 +1033,9 @@ void PlaceRecognition::VisualizeMatchingResults(
     // set the id
     cur_marker.id = i;
     // set the type
-    cur_marker.type = visualization_msgs::Marker::LINE_STRIP;
+    cur_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
     // set the action
-    cur_marker.action = visualization_msgs::Marker::ADD;
+    cur_marker.action = visualization_msgs::msg::Marker::ADD;
     // set the pose
     cur_marker.pose.position.x = 0;
     cur_marker.pose.position.y = 0;
@@ -1039,7 +1053,7 @@ void PlaceRecognition::VisualizeMatchingResults(
     cur_marker.color.g = 0;
     cur_marker.color.b = 0;
     cur_marker.color.a = 1;
-    geometry_msgs::Point cur_point;
+    geometry_msgs::msg::Point cur_point;
     cur_point.x = map_objects_matched[i][1];
     cur_point.y = map_objects_matched[i][2];
     cur_point.z = 0;
@@ -1062,7 +1076,7 @@ void PlaceRecognition::VisualizeMatchingResults(
   // use R_t to transform the all_detection_objects and visualize them
   for (int i = 0; i < all_detection_objects.size(); i++) {
     // create a marker
-    visualization_msgs::Marker cur_marker;
+    visualization_msgs::msg::Marker cur_marker;
     // set the header
     cur_marker.header.frame_id = vis_ref_frame_;
     // set the namespace
@@ -1070,9 +1084,9 @@ void PlaceRecognition::VisualizeMatchingResults(
     // set the id
     cur_marker.id = i;
     // set the type to be a cube
-    cur_marker.type = visualization_msgs::Marker::CUBE;
+    cur_marker.type = visualization_msgs::msg::Marker::CUBE;
     // set the action
-    cur_marker.action = visualization_msgs::Marker::ADD;
+    cur_marker.action = visualization_msgs::msg::Marker::ADD;
     // set the pose
     Eigen::Vector3d cur_object = Eigen::Vector3d::Zero();
     cur_object[0] = all_detection_objects[i][1];
@@ -1101,11 +1115,11 @@ void PlaceRecognition::VisualizeMatchingResults(
   }
 
   // publish the marker array
-  viz_pub_.publish(matching_results);
+  viz_pub_->publish(matching_results);
   // ROS info the marker, which topic and which ref frame
-  ROS_INFO_STREAM(
+  RCLCPP_INFO_STREAM(node_->get_logger(),
       "Visualizing the place recognition matching results in the topic: "
-      << viz_pub_.getTopic());
-  ROS_INFO_STREAM("[PlaceRecognition]: The reference frame is: "
+      << viz_pub_->get_topic_name());
+  RCLCPP_INFO_STREAM(node_->get_logger(),"[PlaceRecognition]: The reference frame is: "
                   << matching_results.markers[0].header.frame_id);
 }

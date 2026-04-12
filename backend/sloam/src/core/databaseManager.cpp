@@ -9,55 +9,65 @@
 
 #include <databaseManager.h>
 
-databaseManager::databaseManager(const ros::NodeHandle &nh) {
-  nh_ = nh;
-  timer_ =
-      nh_.createTimer(ros::Duration(0.2), &databaseManager::runCommunication_, this);
-  std::string node_name = ros::this_node::getName();
+namespace {
+template <typename ParamT>
+ParamT declare_or_get(rclcpp::Node *node, const std::string &name,
+                      const ParamT &default_value) {
+  if (!node->has_parameter(name)) {
+    return node->declare_parameter<ParamT>(name, default_value);
+  }
+  return node->get_parameter(name).get_value<ParamT>();
+}
+}  // namespace
+
+databaseManager::databaseManager(rclcpp::Node *node) {
+  node_ = node;
+  startTime_ = rclcpp::Clock(RCL_ROS_TIME).now();
+  std::chrono::milliseconds period{200};
+  timer_ = node_->create_wall_timer(
+      period, std::bind(&databaseManager::runCommunication_, this));
+  std::string node_name = node_->get_name();
   std::string idName = node_name + "/hostRobotID";
-  nh_.getParam(idName, hostRobotID_);
+  hostRobotID_ = declare_or_get<int>(node_, idName, 0);
   std::string priorTFKnownParamName = node_name + "/priorTFKnown";
-  nh_.getParam(priorTFKnownParamName, priorTFKnown_);
+  priorTFKnown_ = declare_or_get<bool>(node_, priorTFKnownParamName, false);
 
-  if(priorTFKnown_){
-    // ROS_INFO("priorTFKnown_ is true");
+  if (priorTFKnown_) {
     std::string priorTF_x_ParamName = node_name + "/priorTF_x";
-    double priorTF_x = 0;
-    nh_.getParam(priorTF_x_ParamName, priorTF_x);
+    double priorTF_x = declare_or_get<double>(node_, priorTF_x_ParamName, 0.0);
     std::string priorTF_y_ParamName = node_name + "/priorTF_y";
-    double priorTF_y = 0;
-    nh_.getParam(priorTF_y_ParamName, priorTF_y);
+    double priorTF_y = declare_or_get<double>(node_, priorTF_y_ParamName, 0.0);
     std::string priorTF_z_ParamName = node_name + "/priorTF_z";
-    double priorTF_z = 0;
-    nh_.getParam(priorTF_z_ParamName, priorTF_z);
+    double priorTF_z = declare_or_get<double>(node_, priorTF_z_ParamName, 0.0);
 
-    int numRobots = 0;
-    nh_.param<int>("number_of_robots", numRobots, 0);
+    int numRobots = declare_or_get<int>(node_, "number_of_robots", 0);
 
     Eigen::Vector3d priorTF_xyz(priorTF_x, priorTF_y, priorTF_z);
     priorTF2World_ = SE3(SO3(), priorTF_xyz);
     SE3 tfWorld2Robot = priorTF2World_.inverse();
-    // ROS_INFO_STREAM("WE ARE USING THE REFERENCE FRAME FROM ROBOT 0 AS THE WORLD FRAME!");
-    for (int i = 0; i < numRobots; i++)
-    {
+    for (int i = 0; i < numRobots; i++) {
       loopClosureTf[i] = tfWorld2Robot;
     }
   }
 
-  std::string msgName = "/robot" + std::to_string(hostRobotID_)+"/PoseMstPairFromOthers";
-  std::string robot_ns_prefix_;
-  nh_.param<std::string>("robot_ns_prefix", robot_ns_prefix_, "robot");
-  nh_.param<double>("communication_wait_time", commWaitTime_, 30.0);
+  std::string msgName = "/robot" + std::to_string(hostRobotID_) + "/PoseMstPairFromOthers";
+  std::string robot_ns_prefix_local =
+      declare_or_get<std::string>(node_, "robot_ns_prefix", std::string("robot"));
+  commWaitTime_ = declare_or_get<double>(node_, "communication_wait_time", 30.0);
   std::string communicationTriggerTopic =
-      robot_ns_prefix_ + std::to_string(hostRobotID_) + "/pose_high_freq";
-  
+      robot_ns_prefix_local + std::to_string(hostRobotID_) + "/pose_high_freq";
+
   // create different subscribers for different robots
-  int numRobots = 0;
-  nh_.param<int>("number_of_robots", numRobots, 0);
-  for(int i = 0; i < numRobots; i++){
-    poseMstVectorSub_.emplace_back(nh_.subscribe("/robot" + std::to_string(i) + "/PoseMstPairFromOthers", 10, &databaseManager::poseMstCb_, this));
+  int numRobots = declare_or_get<int>(node_, "number_of_robots", 0);
+  for (int i = 0; i < numRobots; i++) {
+    poseMstVectorSub_.emplace_back(
+        node_->create_subscription<sloam_msgs::msg::PoseMstBundle>(
+            "/robot" + std::to_string(i) + "/PoseMstPairFromOthers", 10,
+            std::bind(&databaseManager::poseMstCb_, this,
+                      std::placeholders::_1)));
   }
-  poseMstPub_ = nh_.advertise<sloam_msgs::PoseMstBundle>(msgName, 10);
+  poseMstPub_ =
+      node_->create_publisher<sloam_msgs::msg::PoseMstBundle>(msgName, 10);
   robotDataDict_.emplace(std::make_pair(hostRobotID_, robotData()));
 }
 
@@ -89,9 +99,6 @@ void databaseManager::updateRobotMap(const std::vector<Cylinder> &cylMap,
         ellip.model.scale.x(), ellip.model.scale.y(), ellip.model.scale.z();
     newMap.push_back(ellipVec);
   }
-    //ROS ERROR THE SIZE OF the map and robot id
-    // ROS_ERROR_STREAM("The size of the map is: " << newMap.size());
-    // ROS_ERROR_STREAM("The robot id is: " << robotID);
   robotMapDict_[robotID] = newMap;
 }
 
@@ -101,17 +108,17 @@ void databaseManager::publishPoseMsts(int robotID) {
            "publish!\n");
   } else {
     std::deque<PoseMstPair> poseMsts = robotDataDict_[robotID].poseMstPacket;
-    sloam_msgs::PoseMstBundle bundleMsg;
-    bundleMsg.robotID = robotID;
-    for (int i = 0; i < poseMsts.size(); i++) {
-      sloam_msgs::PoseMst singleMsg;
-      geometry_msgs::Pose poseMsg = ToRosPoseMsg(poseMsts[i].keyPose);
-      geometry_msgs::Pose relativeOdom =
+    sloam_msgs::msg::PoseMstBundle bundleMsg;
+    bundleMsg.robot_id = robotID;
+    for (size_t i = 0; i < poseMsts.size(); i++) {
+      sloam_msgs::msg::PoseMst singleMsg;
+      geometry_msgs::msg::Pose poseMsg = ToRosPoseMsg(poseMsts[i].keyPose);
+      geometry_msgs::msg::Pose relativeOdom =
           ToRosPoseMsg(poseMsts[i].relativeRawOdomMotion);
       singleMsg.pose = poseMsg;
-      singleMsg.relativeRawOdom = relativeOdom;
-      for (int mstIdx = 0; mstIdx < poseMsts[i].cubeMsts.size(); mstIdx++) {
-        sloam_msgs::ROSCube rosCubeMsg;
+      singleMsg.relative_raw_odom = relativeOdom;
+      for (size_t mstIdx = 0; mstIdx < poseMsts[i].cubeMsts.size(); mstIdx++) {
+        sloam_msgs::msg::ROSCube rosCubeMsg;
         Cube curCube = poseMsts[i].cubeMsts[mstIdx];
         for (int j = 0; j < 3; j++) {
           rosCubeMsg.dim[j] = curCube.model.scale[j];
@@ -120,8 +127,8 @@ void databaseManager::publishPoseMsts(int robotID) {
         rosCubeMsg.semantic_label = curCube.model.semantic_label;
         singleMsg.cubes.push_back(rosCubeMsg);
       }
-      for (int mstIdx = 0; mstIdx < poseMsts[i].cylinderMsts.size(); mstIdx++) {
-        sloam_msgs::ROSCylinder rosCylinderMsg;
+      for (size_t mstIdx = 0; mstIdx < poseMsts[i].cylinderMsts.size(); mstIdx++) {
+        sloam_msgs::msg::ROSCylinder rosCylinderMsg;
         Cylinder curCylinder = poseMsts[i].cylinderMsts[mstIdx];
         for (int j = 0; j < 3; j++) {
           rosCylinderMsg.ray[j] = curCylinder.model.ray[j];
@@ -131,9 +138,9 @@ void databaseManager::publishPoseMsts(int robotID) {
         rosCylinderMsg.semantic_label = curCylinder.model.semantic_label;
         singleMsg.cylinders.push_back(rosCylinderMsg);
       }
-      for (int mstIdx = 0; mstIdx < poseMsts[i].ellipsoidMsts.size();
+      for (size_t mstIdx = 0; mstIdx < poseMsts[i].ellipsoidMsts.size();
            mstIdx++) {
-        sloam_msgs::ROSEllipsoid rosEllipsoidMsg;
+        sloam_msgs::msg::ROSEllipsoid rosEllipsoidMsg;
         Ellipsoid curEllipsoid = poseMsts[i].ellipsoidMsts[mstIdx];
         for (int j = 0; j < 3; j++) {
           rosEllipsoidMsg.scale[j] = curEllipsoid.model.scale[j];
@@ -142,47 +149,49 @@ void databaseManager::publishPoseMsts(int robotID) {
         rosEllipsoidMsg.semantic_label = curEllipsoid.model.semantic_label;
         singleMsg.ellipsoids.push_back(rosEllipsoidMsg);
       }
-      bundleMsg.poseMstPair.push_back(singleMsg);
+      bundleMsg.pose_mst_pair.push_back(singleMsg);
     }
-    for (int i = 0; i < robotMapDict_[robotID].size(); i++) {
+    for (size_t i = 0; i < robotMapDict_[robotID].size(); i++) {
       Eigen::Vector7d curPoint = robotMapDict_[robotID][i];
-      sloam_msgs::vector7d labelXYZ;
-      labelXYZ.labelXYZ[0] = curPoint[0];
-      labelXYZ.labelXYZ[1] = curPoint[1];
-      labelXYZ.labelXYZ[2] = curPoint[2];
-      labelXYZ.labelXYZ[3] = curPoint[3];
-      labelXYZ.labelXYZ[4] = curPoint[4];
-      labelXYZ.labelXYZ[5] = curPoint[5];
-      labelXYZ.labelXYZ[6] = curPoint[6];
-      bundleMsg.map_of_labelXYZ.push_back(labelXYZ);
+      sloam_msgs::msg::Vector7d labelXYZ;
+      labelXYZ.label_xyz[0] = curPoint[0];
+      labelXYZ.label_xyz[1] = curPoint[1];
+      labelXYZ.label_xyz[2] = curPoint[2];
+      labelXYZ.label_xyz[3] = curPoint[3];
+      labelXYZ.label_xyz[4] = curPoint[4];
+      labelXYZ.label_xyz[5] = curPoint[5];
+      labelXYZ.label_xyz[6] = curPoint[6];
+      bundleMsg.map_of_label_xyz.push_back(labelXYZ);
     }
-    poseMstPub_.publish(bundleMsg);
+    poseMstPub_->publish(bundleMsg);
   }
 }
 
-void databaseManager::poseMstCb_(const sloam_msgs::PoseMstBundle &msgs) {
-  int robotID = msgs.robotID;
+void databaseManager::poseMstCb_(
+    const sloam_msgs::msg::PoseMstBundle::ConstSharedPtr msgs) {
+  int robotID = msgs->robot_id;
   if (robotDataDict_.find(robotID) == robotDataDict_.end()) {
     robotDataDict_.emplace(std::make_pair(robotID, robotData()));
   }
-  size_t bundleSize = msgs.poseMstPair.size();
+  size_t bundleSize = msgs->pose_mst_pair.size();
   size_t poolSize = robotDataDict_[robotID].poseMstPacket.size();
   if (bundleSize > poolSize && robotID != this->hostRobotID_) {
-    ROS_DEBUG_STREAM("New robot data received from robot:"
-                     << robotID << "by robot:" << this->hostRobotID_);
-    ROS_DEBUG_STREAM("New robot data received ");
-    int startIdx = poolSize;
-    for (int i = startIdx; i < bundleSize; i++) {
+    RCLCPP_DEBUG_STREAM(node_->get_logger(),
+                        "New robot data received from robot:"
+                            << robotID << "by robot:" << this->hostRobotID_);
+    RCLCPP_DEBUG_STREAM(node_->get_logger(), "New robot data received ");
+    size_t startIdx = poolSize;
+    for (size_t i = startIdx; i < bundleSize; i++) {
       struct PoseMstPair poseMst;
-      sloam_msgs::PoseMst singleMsg = msgs.poseMstPair[i];
+      sloam_msgs::msg::PoseMst singleMsg = msgs->pose_mst_pair[i];
       SE3 pose = toSE3Pose(singleMsg.pose);
-      SE3 relativeOdom = toSE3Pose(singleMsg.relativeRawOdom);
-      // constrcut a PoseMstPair struct
+      SE3 relativeOdom = toSE3Pose(singleMsg.relative_raw_odom);
+      // construct a PoseMstPair struct
       poseMst.keyPose = pose;
       poseMst.relativeRawOdomMotion = relativeOdom;
       // convert msg to object
-      for (int j = 0; j < singleMsg.cylinders.size(); j++) {
-        sloam_msgs::ROSCylinder curObjMsg = singleMsg.cylinders[j];
+      for (size_t j = 0; j < singleMsg.cylinders.size(); j++) {
+        sloam_msgs::msg::ROSCylinder curObjMsg = singleMsg.cylinders[j];
         gtsam::Point3 root(curObjMsg.root[0], curObjMsg.root[1],
                            curObjMsg.root[2]);
         gtsam::Point3 ray(curObjMsg.ray[0], curObjMsg.ray[1], curObjMsg.ray[2]);
@@ -190,16 +199,16 @@ void databaseManager::poseMstCb_(const sloam_msgs::PoseMstBundle &msgs) {
         Cylinder tempCylinder(root, ray, radius, curObjMsg.semantic_label);
         poseMst.cylinderMsts.push_back(tempCylinder);
       }
-      for (int j = 0; j < singleMsg.cubes.size(); j++) {
-        sloam_msgs::ROSCube curObjMsg = singleMsg.cubes[j];
+      for (size_t j = 0; j < singleMsg.cubes.size(); j++) {
+        sloam_msgs::msg::ROSCube curObjMsg = singleMsg.cubes[j];
         gtsam::Point3 scale(curObjMsg.dim[0], curObjMsg.dim[1],
                             curObjMsg.dim[2]);
         gtsam::Pose3 gtsamPose = ToGtsamPose3(curObjMsg.pose);
         Cube tempCube(gtsamPose, scale, curObjMsg.semantic_label);
         poseMst.cubeMsts.push_back(tempCube);
       }
-      for (int j = 0; j < singleMsg.ellipsoids.size(); j++) {
-        sloam_msgs::ROSEllipsoid curObjMsg = singleMsg.ellipsoids[j];
+      for (size_t j = 0; j < singleMsg.ellipsoids.size(); j++) {
+        sloam_msgs::msg::ROSEllipsoid curObjMsg = singleMsg.ellipsoids[j];
         gtsam::Point3 scale(curObjMsg.scale[0], curObjMsg.scale[1],
                             curObjMsg.scale[2]);
         gtsam::Pose3 gtsamPose = ToGtsamPose3(curObjMsg.pose);
@@ -209,118 +218,120 @@ void databaseManager::poseMstCb_(const sloam_msgs::PoseMstBundle &msgs) {
       robotDataDict_[robotID].poseMstPacket.push_back(poseMst);
     }
     std::vector<Eigen::Vector7d> newRobotMap;
-    for (int i = 0; i < msgs.map_of_labelXYZ.size(); i++) {
+    for (size_t i = 0; i < msgs->map_of_label_xyz.size(); i++) {
       // construct vector7d first, store it in temp_vector
       Eigen::Vector7d temp_vector;
-      temp_vector << msgs.map_of_labelXYZ[i].labelXYZ[0],
-          msgs.map_of_labelXYZ[i].labelXYZ[1], msgs.map_of_labelXYZ[i].labelXYZ[2],
-          msgs.map_of_labelXYZ[i].labelXYZ[3], msgs.map_of_labelXYZ[i].labelXYZ[4],
-          msgs.map_of_labelXYZ[i].labelXYZ[5], msgs.map_of_labelXYZ[i].labelXYZ[6];
+      temp_vector << msgs->map_of_label_xyz[i].label_xyz[0],
+          msgs->map_of_label_xyz[i].label_xyz[1],
+          msgs->map_of_label_xyz[i].label_xyz[2],
+          msgs->map_of_label_xyz[i].label_xyz[3],
+          msgs->map_of_label_xyz[i].label_xyz[4],
+          msgs->map_of_label_xyz[i].label_xyz[5],
+          msgs->map_of_label_xyz[i].label_xyz[6];
       newRobotMap.emplace_back(temp_vector);
     }
-    //ROS ERROR THE SIZE OF the map and robot id
-    // ROS_ERROR_STREAM("The size of the map is (second): " << newRobotMap.size());
-    // ROS_ERROR_STREAM("The robot id is (second): " << robotID);
     robotMapDict_[robotID] = newRobotMap;
     // transmit the loop closure tf
-    for (int i = 0; i < msgs.interRobotTFs.size(); i++){
+    for (size_t i = 0; i < msgs->inter_robot_tfs.size(); i++) {
       // if the tf received contain the tf relevant to the host robot
-      if(msgs.interRobotTFs[i].targetRobotID == hostRobotID_){
-        SE3 tfReceivedTarget2ReceivedHost = toSE3Pose(msgs.interRobotTFs[i].TFfromTarget2Host); // the tf in the msg 
-        SE3 tfReceivedHost2Host = tfReceivedTarget2ReceivedHost.inverse(); // now the receiver is the target in the msg, host in the msg is the target for the actual host robot who receives the msg
-        loopClosureTf[msgs.interRobotTFs[i].hostRobotID] = tfReceivedHost2Host;
+      if (msgs->inter_robot_tfs[i].target_robot_id == hostRobotID_) {
+        SE3 tfReceivedTarget2ReceivedHost =
+            toSE3Pose(msgs->inter_robot_tfs[i].tf_from_target_to_host);
+        SE3 tfReceivedHost2Host = tfReceivedTarget2ReceivedHost.inverse();
+        loopClosureTf[msgs->inter_robot_tfs[i].host_robot_id] = tfReceivedHost2Host;
       }
       // if the tf received doesn't contain the tf relevant to the host robot
-      else{
+      else {
         // but the tf can be inferred using existing tf
-        int robot_a = msgs.interRobotTFs[i].hostRobotID;
-        int robot_b = msgs.interRobotTFs[i].targetRobotID;
+        int robot_a = msgs->inter_robot_tfs[i].host_robot_id;
+        int robot_b = msgs->inter_robot_tfs[i].target_robot_id;
         bool robot_a_found = loopClosureTf.find(robot_a) != loopClosureTf.end();
         bool robot_b_found = loopClosureTf.find(robot_b) != loopClosureTf.end();
-        SE3 tfB2A = toSE3Pose(msgs.interRobotTFs[i].TFfromTarget2Host);
+        SE3 tfB2A = toSE3Pose(msgs->inter_robot_tfs[i].tf_from_target_to_host);
         SE3 tfA2B = tfB2A.inverse();
-        if(!robot_a_found && robot_b_found){
+        if (!robot_a_found && robot_b_found) {
           SE3 tfB2host = loopClosureTf[robot_b];
-          SE3 tfA2host = tfA2B* tfB2host;
+          SE3 tfA2host = tfA2B * tfB2host;
           loopClosureTf[robot_a] = tfA2host;
-        }
-        else if(robot_a_found && !robot_b_found){
+        } else if (robot_a_found && !robot_b_found) {
           SE3 tfA2host = loopClosureTf[robot_a];
-          SE3 tfB2host = tfB2A* tfA2host;
+          SE3 tfB2host = tfB2A * tfA2host;
           loopClosureTf[robot_b] = tfB2host;
         }
       }
     }
-    measureReceivedCommMsgSize(msgs);
+    measureReceivedCommMsgSize(*msgs);
   }
-  // ROS_DEBUG_STREAM("CURRENT number of robots whose data has been received:"
-  //                  << robotDataDict_.size());
 }
 
-void databaseManager::measureReceivedCommMsgSize(const sloam_msgs::PoseMstBundle &msgs){
+void databaseManager::measureReceivedCommMsgSize(
+    const sloam_msgs::msg::PoseMstBundle &msgs) {
   double cur_received_msg_size_bytes = 0;
   cur_received_msg_size_bytes += 1;
-  for (int i = 0; i < msgs.poseMstPair.size(); i++) {
+  for (size_t i = 0; i < msgs.pose_mst_pair.size(); i++) {
     cur_received_msg_size_bytes += 56;
     cur_received_msg_size_bytes += 56;
-    cur_received_msg_size_bytes += 69*msgs.poseMstPair[i].ellipsoids.size();
-    cur_received_msg_size_bytes += 69*msgs.poseMstPair[i].cubes.size();
-    cur_received_msg_size_bytes += 37*msgs.poseMstPair[i].cylinders.size();
-    cur_received_msg_size_bytes += 58*msgs.interRobotTFs.size();
+    cur_received_msg_size_bytes += 69 * msgs.pose_mst_pair[i].ellipsoids.size();
+    cur_received_msg_size_bytes += 69 * msgs.pose_mst_pair[i].cubes.size();
+    cur_received_msg_size_bytes += 37 * msgs.pose_mst_pair[i].cylinders.size();
+    cur_received_msg_size_bytes += 58 * msgs.inter_robot_tfs.size();
   }
-  cur_received_msg_size_bytes += msgs.map_of_labelXYZ.size()*32;
-  receivedMsgSizeMB.push_back(cur_received_msg_size_bytes/1000000);
+  cur_received_msg_size_bytes += msgs.map_of_label_xyz.size() * 32;
+  receivedMsgSizeMB.push_back(cur_received_msg_size_bytes / 1000000);
 }
 
-void databaseManager::runCommunication_(const ros::TimerEvent &e) {
-  ros::Duration time_diff = ros::Time::now() - startTime_;
-  if (time_diff.toSec() > commWaitTime_) {
-    startTime_ = ros::Time::now();
-    ROS_INFO_THROTTLE(3.0, "TRIGGERING COMMUNICATION!");
+void databaseManager::runCommunication_() {
+  rclcpp::Time now = rclcpp::Clock(RCL_ROS_TIME).now();
+  rclcpp::Duration time_diff = now - startTime_;
+  if (time_diff.seconds() > commWaitTime_) {
+    startTime_ = now;
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *node_->get_clock(), 3000,
+                         "TRIGGERING COMMUNICATION!");
     double cur_publish_msg_size_bytes = 0;
     for (auto iter = getRobotDataDict().begin();
          iter != getRobotDataDict().end(); iter++) {
       int curRobotID = iter->first;
-      sloam_msgs::PoseMstBundle bundleMsg;
-      bundleMsg.robotID = curRobotID;
-      for (int i = 0; i < iter->second.poseMstPacket.size(); i++) {
+      sloam_msgs::msg::PoseMstBundle bundleMsg;
+      bundleMsg.robot_id = curRobotID;
+      for (size_t i = 0; i < iter->second.poseMstPacket.size(); i++) {
         struct PoseMstPair pmp = iter->second.poseMstPacket[i];
-        sloam_msgs::PoseMst pmMsg;
+        sloam_msgs::msg::PoseMst pmMsg;
         pmMsg.pose = ToRosPoseMsg(pmp.keyPose);
-        pmMsg.relativeRawOdom = ToRosPoseMsg(pmp.relativeRawOdomMotion);
+        pmMsg.relative_raw_odom = ToRosPoseMsg(pmp.relativeRawOdomMotion);
         pmMsg.cylinders = obj2RosObjMsg(pmp.cylinderMsts);
         pmMsg.cubes = obj2RosObjMsg(pmp.cubeMsts);
         pmMsg.ellipsoids = obj2RosObjMsg(pmp.ellipsoidMsts);
-        bundleMsg.poseMstPair.push_back(pmMsg);
-        cur_publish_msg_size_bytes += 69*pmp.ellipsoidMsts.size();
-        cur_publish_msg_size_bytes += 69*pmp.cubeMsts.size();
-        cur_publish_msg_size_bytes += 37*pmp.cylinderMsts.size();
+        bundleMsg.pose_mst_pair.push_back(pmMsg);
+        cur_publish_msg_size_bytes += 69 * pmp.ellipsoidMsts.size();
+        cur_publish_msg_size_bytes += 69 * pmp.cubeMsts.size();
+        cur_publish_msg_size_bytes += 37 * pmp.cylinderMsts.size();
         cur_publish_msg_size_bytes += 56;
         cur_publish_msg_size_bytes += 56;
       }
-      for (int i = 0; i < robotMapDict_[curRobotID].size(); i++) {
+      for (size_t i = 0; i < robotMapDict_[curRobotID].size(); i++) {
         Eigen::Vector7d curPoint = robotMapDict_[curRobotID][i];
-        sloam_msgs::vector7d labelXYZ;
-        labelXYZ.labelXYZ[0] = curPoint[0];
-        labelXYZ.labelXYZ[1] = curPoint[1];
-        labelXYZ.labelXYZ[2] = curPoint[2];
-        labelXYZ.labelXYZ[3] = curPoint[3];
-        labelXYZ.labelXYZ[4] = curPoint[4];
-        labelXYZ.labelXYZ[5] = curPoint[5];
-        labelXYZ.labelXYZ[6] = curPoint[6];
-        bundleMsg.map_of_labelXYZ.push_back(labelXYZ);
+        sloam_msgs::msg::Vector7d labelXYZ;
+        labelXYZ.label_xyz[0] = curPoint[0];
+        labelXYZ.label_xyz[1] = curPoint[1];
+        labelXYZ.label_xyz[2] = curPoint[2];
+        labelXYZ.label_xyz[3] = curPoint[3];
+        labelXYZ.label_xyz[4] = curPoint[4];
+        labelXYZ.label_xyz[5] = curPoint[5];
+        labelXYZ.label_xyz[6] = curPoint[6];
+        bundleMsg.map_of_label_xyz.push_back(labelXYZ);
         cur_publish_msg_size_bytes += 56;
       }
-      for (auto iter=loopClosureTf.begin(); iter!=loopClosureTf.end(); iter++){
-        sloam_msgs::interRobotTF interRobotTFMsg;
-        interRobotTFMsg.hostRobotID = hostRobotID_;
-        interRobotTFMsg.targetRobotID = iter->first;
-        interRobotTFMsg.TFfromTarget2Host = ToRosPoseMsg(iter->second);
-        bundleMsg.interRobotTFs.push_back(interRobotTFMsg);
+      for (auto iter = loopClosureTf.begin(); iter != loopClosureTf.end();
+           iter++) {
+        sloam_msgs::msg::InterRobotTf interRobotTFMsg;
+        interRobotTFMsg.host_robot_id = hostRobotID_;
+        interRobotTFMsg.target_robot_id = iter->first;
+        interRobotTFMsg.tf_from_target_to_host = ToRosPoseMsg(iter->second);
+        bundleMsg.inter_robot_tfs.push_back(interRobotTFMsg);
         cur_publish_msg_size_bytes += 58;
       }
-      poseMstPub_.publish(bundleMsg);
+      poseMstPub_->publish(bundleMsg);
     }
-    publishMsgSizeMB.push_back(cur_publish_msg_size_bytes/1000000);
+    publishMsgSizeMB.push_back(cur_publish_msg_size_bytes / 1000000);
   }
 }

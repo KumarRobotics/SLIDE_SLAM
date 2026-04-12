@@ -9,20 +9,31 @@
 
 #include <robot.h>
 
-Robot::Robot(const ros::NodeHandle &nh) : nh_(nh) {
+namespace {
+template <typename ParamT>
+ParamT declare_or_get(rclcpp::Node *node, const std::string &name,
+                      const ParamT &default_value) {
+  if (!node->has_parameter(name)) {
+    return node->declare_parameter<ParamT>(name, default_value);
+  }
+  return node->get_parameter(name).get_value<ParamT>();
+}
+}  // namespace
+
+Robot::Robot(rclcpp::Node *node) : node_(node) {
 
   // access ros parameter
-  odomFreqFilter_ = nh_.param("odom_freq_filter", 10);
-  nh_.param<std::string>("robot_frame_id", robot_frame_id_, "robot");
-  nh_.param<float>("min_robot_altitude", minSLOAMAltitude_, 0.0);
-  maxQueueSize_ = nh_.param("max_queue_size", 100);
-  nh_.param<std::string>("robot_ns_prefix", robot_ns_prefix_, "robot");
-  nh_.param<std::string>("odom_topic", odom_topic_, "odom");
+  odomFreqFilter_ = declare_or_get<int>(node_, "odom_freq_filter", 10);
+  robot_frame_id_ = declare_or_get<std::string>(node_, "robot_frame_id", "robot");
+  minSLOAMAltitude_ = declare_or_get<double>(node_, "min_robot_altitude", 0.0);
+  maxQueueSize_ = declare_or_get<int>(node_, "max_queue_size", 100);
+  robot_ns_prefix_ = declare_or_get<std::string>(node_, "robot_ns_prefix", "robot");
+  odom_topic_ = declare_or_get<std::string>(node_, "odom_topic", "odom");
 
   // initialization
-  std::string node_name = ros::this_node::getName();
+  std::string node_name = node_->get_name();
   std::string idName = node_name + "/hostRobotID";
-  robotId_ = nh_.param(idName, 0);
+  robotId_ = declare_or_get<int>(node_, idName, 0);
   std::string cur_robot_odom_topic;
   int robot_actual_ID;
   robot_actual_ID = robotId_;
@@ -32,47 +43,55 @@ Robot::Robot(const ros::NodeHandle &nh) : nh_(nh) {
   // initialize publisher and subscriber
   std::string RobotHighFreqSLOAMPose_topic =
       robot_ns_prefix_ + std::to_string(robot_actual_ID) + "/pose_high_freq";
-  pubRobotHighFreqSLOAMPose_ = nh_.advertise<geometry_msgs::PoseStamped>(
-      RobotHighFreqSLOAMPose_topic, 10);
+  pubRobotHighFreqSLOAMPose_ =
+      node_->create_publisher<geometry_msgs::msg::PoseStamped>(
+          RobotHighFreqSLOAMPose_topic, 10);
 
   std::string RobotHighFreqSLOAMOdom_topic = robot_ns_prefix_ +
                                              std::to_string(robot_actual_ID) +
                                              "/sloam_odom_high_freq";
   pubRobotHighFreqSLOAMOdom_ =
-      nh_.advertise<nav_msgs::Odometry>(RobotHighFreqSLOAMOdom_topic, 20);
+      node_->create_publisher<nav_msgs::msg::Odometry>(
+          RobotHighFreqSLOAMOdom_topic, 20);
 
   std::string SloamToVioOdom_topic =
       robot_ns_prefix_ + std::to_string(robot_actual_ID) + "/sloam_to_vio_odom";
   pubSloamToVioOdom_ =
-      nh_.advertise<nav_msgs::Odometry>(SloamToVioOdom_topic, 20);
+      node_->create_publisher<nav_msgs::msg::Odometry>(SloamToVioOdom_topic, 20);
 
   std::string RobotHighFreqSyncOdom_topic = robot_ns_prefix_ +
                                             std::to_string(robot_actual_ID) +
                                             "/sync_odom_high_freq";
   pubRobotHighFreqSyncOdom_ =
-      nh_.advertise<nav_msgs::Odometry>(RobotHighFreqSyncOdom_topic, 20);
+      node_->create_publisher<sloam_msgs::msg::ROSSyncOdom>(
+          RobotHighFreqSyncOdom_topic, 20);
 
-  RobotOdomSub_ = nh_.subscribe("odom", 10, &Robot::RobotOdomCb, this);
+  RobotOdomSub_ = node_->create_subscription<nav_msgs::msg::Odometry>(
+      "odom", 10,
+      std::bind(&Robot::RobotOdomCb, this, std::placeholders::_1));
   std::string observationSub_topic = robot_ns_prefix_ +
                                      std::to_string(robot_actual_ID) +
                                      "/semantic_meas_sync_odom";
 
   RobotObservationSub_ =
-      nh_.subscribe(observationSub_topic, 10, &Robot::RobotObservationCb, this);
+      node_->create_subscription<sloam_msgs::msg::SemanticMeasSyncOdom>(
+          observationSub_topic, 10,
+          std::bind(&Robot::RobotObservationCb, this, std::placeholders::_1));
 
-  ROS_INFO_STREAM("Robot Initialized! Robot # " << robot_actual_ID);
+  RCLCPP_INFO_STREAM(node_->get_logger(),
+                     "Robot Initialized! Robot # " << robot_actual_ID);
 }
 
-void Robot::RobotOdomCb(const nav_msgs::OdometryConstPtr &odom_msg) {
+void Robot::RobotOdomCb(const nav_msgs::msg::Odometry::ConstSharedPtr odom_msg) {
   if (odomFreqFilter_ > 1) {
     robotOdomCounter_++;
     if (robotOdomCounter_ % odomFreqFilter_ != 0)
       return;
     robotOdomCounter_ = 0;
-  } 
+  }
 
   auto pose = odom_msg->pose.pose;
-  ros::Time odomStamp = odom_msg->header.stamp;
+  rclcpp::Time odomStamp(odom_msg->header.stamp);
   Quat rot(pose.orientation.w, pose.orientation.x, pose.orientation.y,
            pose.orientation.z);
   Vector3 pos(pose.position.x, pose.position.y, pose.position.z);
@@ -83,16 +102,17 @@ void Robot::RobotOdomCb(const nav_msgs::OdometryConstPtr &odom_msg) {
 
 
   if (robotFirstOdom_ && pose.position.z < minSLOAMAltitude_) {
-    ROS_INFO_STREAM_THROTTLE(
-        5, "Robot is too low, will not call sloam, height threshold is "
-               << minSLOAMAltitude_);
+    RCLCPP_INFO_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 5000,
+        "Robot is too low, will not call sloam, height threshold is "
+            << minSLOAMAltitude_);
     return;
-  } 
+  }
 
   // if either robotObservationQueue_.empty() or robotOdomQueue_.empty(), we need to add odom factor
   bool is_first_run = false;
   if (robotObservationQueue_.empty() || robotOdomQueue_.empty()) {
-    ROS_INFO_STREAM_THROTTLE(1.0, "Either robotObservationQueue_ or robotOdomQueue_ is empty, will add odom factor");
+    RCLCPP_INFO_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 1000,
+        "Either robotObservationQueue_ or robotOdomQueue_ is empty, will add odom factor");
     is_first_run = true;
   }
 
@@ -106,8 +126,9 @@ void Robot::RobotOdomCb(const nav_msgs::OdometryConstPtr &odom_msg) {
   } else {
     // we set robotOdomUpdated_ to true only if the latest semantic measurements can be discard (i.e. its timestamp is at least semantic_meas_delay_tolerance_ seconds earlier than the latest odometry stamp)
     auto latest_observation_stamp = robotObservationQueue_.back().stampedPose.stamp;
-    if ((odomStamp - latest_observation_stamp).toSec() > semantic_meas_delay_tolerance_) {
-      ROS_INFO_STREAM_THROTTLE(5.0, "Odometry delay is enabled, and semantic observation is old enough, setting robotOdomUpdated_ to true");
+    if ((odomStamp - latest_observation_stamp).seconds() > semantic_meas_delay_tolerance_) {
+      RCLCPP_INFO_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 5000,
+          "Odometry delay is enabled, and semantic observation is old enough, setting robotOdomUpdated_ to true");
       robotOdomUpdated_ = true;
     } else {
       robotOdomUpdated_ = false;
@@ -116,27 +137,30 @@ void Robot::RobotOdomCb(const nav_msgs::OdometryConstPtr &odom_msg) {
 }
 
 void Robot::RobotObservationCb(
-    const sloam_msgs::SemanticMeasSyncOdom &observation_msg) {
-  // ROS_INFO_STREAM("RobotObservationCb!");
+    const sloam_msgs::msg::SemanticMeasSyncOdom::ConstSharedPtr observation_msg) {
   // compared the stamp of the observation with the latest odometry stamp, if too old, discard this observation msg
   if (robotOdomQueue_.empty()) {
-    ROS_WARN_STREAM("RobotOdomQueue is empty, cannot compare stamp");
+    RCLCPP_WARN_STREAM(node_->get_logger(), "RobotOdomQueue is empty, cannot compare stamp");
     return;
   }
   auto latest_odom_stamp = robotOdomQueue_.back().stamp;
-  if ((latest_odom_stamp - observation_msg.header.stamp).toSec() > semantic_meas_delay_tolerance_) {
-    ROS_WARN_STREAM("Semantic observation arrived too late, discard this observation");
-    ROS_WARN_STREAM("Semantic observation arrived " << (latest_odom_stamp - observation_msg.header.stamp).toSec() << " seconds late, tolerance is " << semantic_meas_delay_tolerance_);
+  rclcpp::Time obs_stamp(observation_msg->header.stamp);
+  if ((latest_odom_stamp - obs_stamp).seconds() > semantic_meas_delay_tolerance_) {
+    RCLCPP_WARN_STREAM(node_->get_logger(), "Semantic observation arrived too late, discard this observation");
+    RCLCPP_WARN_STREAM(node_->get_logger(),
+        "Semantic observation arrived "
+            << (latest_odom_stamp - obs_stamp).seconds()
+            << " seconds late, tolerance is " << semantic_meas_delay_tolerance_);
     return;
   }
   Observation cur_observation;
   cur_observation.stampedPose.pose =
-      databaseManager::toSE3Pose(observation_msg.odometry.pose.pose);
-  cur_observation.stampedPose.stamp = observation_msg.header.stamp;
+      databaseManager::toSE3Pose(observation_msg->odometry.pose.pose);
+  cur_observation.stampedPose.stamp = obs_stamp;
   std::vector<Cube> scan_cubes_body;
-  int total_cuboids = observation_msg.cuboid_factors.size();
-  for (const sloam_msgs::ROSCube &cur_cuboid_marker :
-       observation_msg.cuboid_factors) {
+  int total_cuboids = observation_msg->cuboid_factors.size();
+  for (const sloam_msgs::msg::ROSCube &cur_cuboid_marker :
+       observation_msg->cuboid_factors) {
     double x = cur_cuboid_marker.pose.position.x;
     double y = cur_cuboid_marker.pose.position.y;
     double z = cur_cuboid_marker.pose.position.z;
@@ -156,15 +180,15 @@ void Robot::RobotObservationCb(
   // Cylinder
   cur_observation.cubes = scan_cubes_body;
   cur_observation.cylinders =
-      rosCylinder2CylinderObj(observation_msg.cylinder_factors);
+      rosCylinder2CylinderObj(observation_msg->cylinder_factors);
   cur_observation.ellipsoids =
-      rosEllipsoid2EllipObj(observation_msg.ellipsoid_factors);
+      rosEllipsoid2EllipObj(observation_msg->ellipsoid_factors);
   robotObservationQueue_.push(cur_observation);
   robotObservationUpdated_ = true;
 }
 
 std::vector<Cylinder> Robot::rosCylinder2CylinderObj(
-    const std::vector<sloam_msgs::ROSCylinder> &rosCylinders) {
+    const std::vector<sloam_msgs::msg::ROSCylinder> &rosCylinders) {
 
   std::vector<Cylinder> cylinders;
   for (const auto &obj : rosCylinders) {
@@ -177,7 +201,7 @@ std::vector<Cylinder> Robot::rosCylinder2CylinderObj(
 }
 
 std::vector<Ellipsoid> Robot::rosEllipsoid2EllipObj(
-    const std::vector<sloam_msgs::ROSEllipsoid> &msgs) {
+    const std::vector<sloam_msgs::msg::ROSEllipsoid> &msgs) {
   std::vector<Ellipsoid> ellipsoids;
 
   for (const auto m : msgs) {

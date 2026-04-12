@@ -36,8 +36,8 @@ endif()
 ###############################################################################
 
 ##########Triangulaton library##############
+# catkin dependency removed for ROS2 Jazzy port — clipper is built as a plain CMake subdirectory
 find_package(OpenCV REQUIRED)
-find_package(catkin REQUIRED COMPONENTS roscpp)
 find_package(Boost REQUIRED)
 INCLUDE_DIRECTORIES(/usr/local/include/libqhullcpp)
 INCLUDE_DIRECTORIES(/usr/local/include/libqhull_r)
@@ -113,12 +113,18 @@ target_sources(clipper PRIVATE
   src/invariants/euclidean_distance.cpp
   src/invariants/pointnormal_distance.cpp
   src/semantic_clipper.cpp)
-target_link_libraries(clipper PUBLIC Eigen3::Eigen ${catkin_LIBRARIES})
+target_link_libraries(clipper PUBLIC Eigen3::Eigen)
 target_link_libraries(clipper PRIVATE OpenMP::OpenMP_CXX)
 target_include_directories(clipper PUBLIC
     $<INSTALL_INTERFACE:include>
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-    ${catkin_INCLUDE_DIRS})
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
+# Provide no-op shims for ROS1 logging macros that still appear in this
+# vendored third-party source so the file compiles without roscpp.
+target_compile_definitions(clipper PRIVATE
+  "ROS_INFO_STREAM(x)=do{}while(0)"
+  "ROS_WARN_STREAM(x)=do{}while(0)"
+  "ROS_ERROR_STREAM(x)=do{}while(0)"
+  "ROS_DEBUG_STREAM(x)=do{}while(0)")
 target_compile_options(clipper PUBLIC -march=native -mavx -mfma)
 set_target_properties(clipper PROPERTIES
   VERSION ${PROJECT_VERSION})
@@ -161,6 +167,13 @@ target_sources(semantic_clipper PRIVATE
   src/semantic_clipper.cpp)
 target_link_libraries(semantic_clipper PRIVATE clipper triangulation ${EIGEN3_LIBRARIES} ${Boost_LIBRARIES})
 target_include_directories(semantic_clipper PRIVATE include ${Boost_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIR})
+# Provide no-op shims for ROS1 logging macros that still appear in this
+# vendored third-party source so the file compiles without roscpp.
+target_compile_definitions(semantic_clipper PRIVATE
+  "ROS_INFO_STREAM(x)=do{}while(0)"
+  "ROS_WARN_STREAM(x)=do{}while(0)"
+  "ROS_ERROR_STREAM(x)=do{}while(0)"
+  "ROS_DEBUG_STREAM(x)=do{}while(0)")
 
 #########Test semantic clipper target##############
 add_executable(test_semantic_clipper test/test_semantic_clipper.cpp)

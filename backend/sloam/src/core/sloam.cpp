@@ -76,13 +76,13 @@ void sloam::matchModels(const std::vector<T> &currObjects,
                         std::vector<int> &matchIndices) {
   size_t obj_counter = 0;
   if (currObjects.size() == 0) {
-    ROS_WARN("No cylinder detected in current scan!");
+    RCLCPP_WARN(rclcpp::get_logger("sloam"), "No cylinder detected in current scan!");
     if (mapObjects.size() == 0) {
-      ROS_WARN("No cylinder in submap!");
+      RCLCPP_WARN(rclcpp::get_logger("sloam"), "No cylinder in submap!");
     }
     return;
   } else if (mapObjects.size() == 0) {
-    ROS_WARN("No cylinder in submap!");
+    RCLCPP_WARN(rclcpp::get_logger("sloam"), "No cylinder in submap!");
     return;
   }
   for (const auto &co : currObjects) {
@@ -117,10 +117,10 @@ void sloam::matchCubeModels(const std::vector<T> &currObjects,
   size_t obj_counter = 0;
 
   if (currObjects.size() == 0) {
-    ROS_WARN("No cube detected in current scan!");
+    RCLCPP_WARN(rclcpp::get_logger("sloam"), "No cube detected in current scan!");
     return;
   } else if (mapObjects.size() == 0) {
-    ROS_WARN("No cube in submap!");
+    RCLCPP_WARN(rclcpp::get_logger("sloam"), "No cube in submap!");
     return;
   }
 
@@ -161,10 +161,10 @@ void sloam::matchEllipsoidModels(const std::vector<T> &currObjects,
                                  std::vector<int> &matchIndices) {
 
   if (currObjects.size() == 0) {
-    ROS_WARN("No Ellipsoid detected in current scan!");
+    RCLCPP_WARN(rclcpp::get_logger("sloam"), "No Ellipsoid detected in current scan!");
     return;
   } else if (mapObjects.size() == 0) {
-    ROS_WARN("No Ellipsoid in submap!");
+    RCLCPP_WARN(rclcpp::get_logger("sloam"), "No Ellipsoid in submap!");
     return;
   }
   // TODO(ankit): Make ellip_match_search_threshold and valid_match_treshold a parameter

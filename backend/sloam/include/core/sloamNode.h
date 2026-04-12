@@ -13,11 +13,12 @@
 // ROS
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/geometry/Rot3.h>
-#include <ros/ros.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <tf/transform_broadcaster.h>
-#include <visualization_msgs/Marker.h>
-#include <visualization_msgs/MarkerArray.h>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <tf2_ros/transform_broadcaster.h>
+#include <visualization_msgs/msg/marker.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 
 // pcl
 #include <cube.h>
@@ -31,16 +32,17 @@
 #include <pcl/common/transforms.h>
 #include <pcl/filters/filter.h>
 #include <pcl/filters/voxel_grid.h>
-#include <pcl_ros/point_cloud.h>
+#include <pcl_conversions/pcl_conversions.h>
 #include <place_recognition.h>
 #include <sloam.h>
-#include <sloam_msgs/ROSObservation.h>
+#include <sloam_msgs/msg/ros_observation.hpp>
 #include <tf2/buffer_core.h>
-#include <tf2_eigen/tf2_eigen.h>
+#include <tf2_eigen/tf2_eigen.hpp>
 #include <tf2_ros/transform_listener.h>
 #include <utils.h>
 #include <vizTools.h>
 
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <random>
@@ -52,20 +54,20 @@ using Cloud = pcl::PointCloud<Point>;
 namespace sloam {
 class SLOAMNode : public sloam {
  public:
-  explicit SLOAMNode(const ros::NodeHandle &nh);
+  explicit SLOAMNode(rclcpp::Node *node);
   ~SLOAMNode();
   void destaggerCloud(const Cloud::Ptr cloud, Cloud::Ptr &outCloud);
   SLOAMNode(const SLOAMNode &) = delete;
   SLOAMNode operator=(const SLOAMNode &) = delete;
-  using Ptr = boost::shared_ptr<SLOAMNode>;
-  using ConstPtr = boost::shared_ptr<const SLOAMNode>;
+  using Ptr = std::shared_ptr<SLOAMNode>;
+  using ConstPtr = std::shared_ptr<const SLOAMNode>;
 
   // timestamp is used for visualization
   bool runSLOAMNode(const SE3 &relativeRawOdomMotion, const SE3 &prevKeyPose,
                     const std::vector<Cylinder> &cylindersBody,
                     const std::vector<Cube> &cubesBody,
                     const std::vector<Ellipsoid> &ellipsoidBody,
-                    ros::Time stamp, SE3 &outPose, const int &robotID);
+                    rclcpp::Time stamp, SE3 &outPose, const int &robotID);
   bool isInLoopClosureRegion_ = false;
   SemanticFactorGraphWrapper factorGraph_;
   databaseManager dbManager;
@@ -89,28 +91,28 @@ class SLOAMNode : public sloam {
  private:
   // TODO(xu): load the following four params from rosparam
   bool save_inter_robot_closure_results_ = true;
-  string save_results_dir_ = "/home/sam";
+  std::string save_results_dir_ = "/home/sam";
   bool save_robot_trajectory_as_csv_ = false;
-  string save_runtime_analysis_dir_ = "/home/sam";
+  std::string save_runtime_analysis_dir_ = "/home/sam";
 
 
   double inter_robot_place_recognition_frequency_;
   double intra_robot_place_recognition_frequency_;
 
-  std::vector<ros::Time> KeyPoseTimeStamps;
-  ros::Publisher groundPub_;
+  std::vector<rclcpp::Time> KeyPoseTimeStamps;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr groundPub_;
 
   void initParams_();
   Cloud::Ptr trellisCloud(
       const std::vector<std::vector<TreeVertex>> &landmarks);
-  void publishMap_(const ros::Time stamp);
-  void publishCubeMaps_(const ros::Time stamp);
+  void publishMap_(const rclcpp::Time stamp);
+  void publishCubeMaps_(const rclcpp::Time stamp);
 
   bool prepareInputs_(const SE3 relativeMotion, const SE3 prevKeyPose,
                       CloudT::Ptr tree_cloud, CloudT::Ptr ground_cloud,
                       SloamInput &sloamIn);
   void publishResults_(const SloamInput &sloamIn, const SloamOutput &sloamOut,
-                       ros::Time stamp, const int &robotID);
+                       rclcpp::Time stamp, const int &robotID);
   void intraLoopClosureThread_();
   void interLoopClosureThread_();
 
@@ -130,31 +132,31 @@ class SLOAMNode : public sloam {
       const std::vector<Cube> &candidateCubeObs,
       const std::vector<Ellipsoid> &candidateCentroidObs);
 
-  ros::NodeHandle nh_;
-  
+  rclcpp::Node *node_;
+
   bool use_slidematch_; // whether to use the slidematch algorithm, if false, use
                         // the slidegraph place recognition algorithm
 
-  tf::TransformBroadcaster worldTfBr_;
-  ros::Publisher pubMapPose_;
-  ros::Publisher pubObs_;
-  ros::Publisher pubAllPointLandmarks_;
+  std::unique_ptr<tf2_ros::TransformBroadcaster> worldTfBr_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubMapPose_;
+  rclcpp::Publisher<sloam_msgs::msg::ROSObservation>::SharedPtr pubObs_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubAllPointLandmarks_;
 
-  std::vector<ros::Publisher> pubRobotTrajectory_;
-  ros::Publisher pubMapGroundFeatures_;
-  ros::Publisher pubObsTreeFeatures_;
-  ros::Publisher pubObsGroundFeatures_;
-  ros::Publisher pubMapTreeModel_;
-  ros::Publisher pubSubmapTreeModel_;
-  ros::Publisher pubObsTreeModel_;
-  ros::Publisher pubMapGroundModel_;
-  ros::Publisher pubObsGroundModel_;
-  ros::Publisher pubMapCubeModel_;
-  ros::Publisher pubSubmapCubeModel_;
+  std::vector<rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr> pubRobotTrajectory_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubMapGroundFeatures_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubObsTreeFeatures_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubObsGroundFeatures_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubMapTreeModel_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubSubmapTreeModel_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubObsTreeModel_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubMapGroundModel_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubObsGroundModel_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubMapCubeModel_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubSubmapCubeModel_;
 
   // Transform
-  tf2_ros::Buffer tf_buffer_;
-  std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   std::string map_frame_id_;
 
   // Instance graphDetector_;
@@ -164,8 +166,8 @@ class SLOAMNode : public sloam {
 
   // loop closure related
   PlaceRecognition intra_loopCloser_;
-  ros::Time last_intra_loop_closure_stamp_;
-  ros::Time last_inter_loop_closure_stamp_;
+  rclcpp::Time last_intra_loop_closure_stamp_;
+  rclcpp::Time last_inter_loop_closure_stamp_;
   PlaceRecognition inter_loopCloser_;
   std::thread intraLoopthread_;
   std::thread interLoopthread_;

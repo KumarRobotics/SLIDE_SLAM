@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<launch>
-    <rosparam file="$(find sloam)/params/sloam_sim.yaml" command="load" />
-    <rosparam file="$(find sloam)/params/sim.yaml" command="load" />
-    <include file="$(find sloam)/launch/sloam.launch"></include>
-</launch>

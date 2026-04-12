@@ -22,6 +22,7 @@
 #include <gtsam/sam/RangeFactor.h>
 #include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/slam/PriorFactor.h>
+#include <rclcpp/rclcpp.hpp>
 #include <string.h>
 
 #include <boost/array.hpp>
@@ -141,5 +142,5 @@ class SemanticFactorGraph {
   ISAM2* isam;             
   size_t latest_to_idx_ = 0;
   size_t latest_landmark_counter = 0;
-  ros::Time start_time_;
+  rclcpp::Time start_time_{0, 0, RCL_ROS_TIME};
 };

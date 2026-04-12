@@ -1,8 +1,8 @@
 #pragma once
 
 #include <definitions.h>
-#include <geometry_msgs/QuaternionStamped.h>
-#include <geometry_msgs/Pose.h>
+#include <geometry_msgs/msg/quaternion_stamped.hpp>
+#include <geometry_msgs/msg/pose.hpp>
 #include <chrono>
 
 inline float pow_2(const Scalar &x) { return x * x; }
@@ -25,7 +25,7 @@ inline PointT computeCentroid(const VectorType &features) {
   return centroid;
 }
 
-inline void quatMsg2SE3(const geometry_msgs::QuaternionStampedConstPtr &quatMsg,
+inline void quatMsg2SE3(const geometry_msgs::msg::QuaternionStamped::ConstSharedPtr &quatMsg,
                         SE3 &pose) {
   Quat q;
   q.w() = quatMsg->quaternion.w;
@@ -49,7 +49,7 @@ inline Vector3 rayPlaneIntersection(const Vector3 &planeCentroid,
 }
 
 
-inline SE3 ToSE3(const geometry_msgs::Pose &transform_msg) {
+inline SE3 ToSE3(const geometry_msgs::msg::Pose &transform_msg) {
   // Extract the translation components from the geometry_msgs::Transform message
   Eigen::Vector3d translation_vector;
   translation_vector.x() = transform_msg.position.x;
@@ -72,9 +72,9 @@ inline SE3 ToSE3(const geometry_msgs::Pose &transform_msg) {
   return se3_transform;
 }
 
-inline geometry_msgs::Pose ToRosPoseMsg(const SE3 &T){
+inline geometry_msgs::msg::Pose ToRosPoseMsg(const SE3 &T){
   // Create a geometry_msgs::Transform message
-  geometry_msgs::Pose transform_msg;
+  geometry_msgs::msg::Pose transform_msg;
 
   // Extract the rotation matrix and translation vector from Sophus::SE3d
   Eigen::Matrix3d rotation_matrix = T.rotationMatrix();

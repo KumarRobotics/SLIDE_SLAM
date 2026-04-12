@@ -8,8 +8,13 @@
 */
 
 #include <graph.h>
-#include <ros/console.h>
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
+
+namespace {
+inline rclcpp::Logger gfg_logger() {
+  return rclcpp::get_logger("SemanticFactorGraph");
+}
+}  // namespace
 
 SemanticFactorGraph::SemanticFactorGraph() {
   isam_params.factorization = ISAM2Params::CHOLESKY;
@@ -47,7 +52,7 @@ SemanticFactorGraph::SemanticFactorGraph() {
   noise_model_closure =
       noiseModel::Diagonal::Sigmas(noise_model_pose_vec * 0.01);
       
-  start_time_ = ros::Time::now();
+  start_time_ = rclcpp::Clock(RCL_ROS_TIME).now();
 }
 
 void SemanticFactorGraph::setPriors(const Pose3 &pose_prior,
@@ -57,8 +62,9 @@ void SemanticFactorGraph::setPriors(const Pose3 &pose_prior,
                          noise_model_prior_first_pose);
   // here the insert also set the initial estimate for the optimization
   fvalues.insert(getSymbol(robotID, idx), pose_prior);
-  ROS_INFO_STREAM("Setting prior for robot " << robotID
-                                             << " with pose: " << pose_prior);
+  RCLCPP_INFO_STREAM(gfg_logger(),
+                     "Setting prior for robot " << robotID
+                                                << " with pose: " << pose_prior);
 
   // only for active SLAM:
   // --------------------------------
@@ -169,14 +175,14 @@ void SemanticFactorGraph::addKeyPoseAndBetween(
     gtsam::Pose3 est_from_pose;
 
     if (closure_matched_pose_idx == 0) {
-      ROS_ERROR(
+      RCLCPP_ERROR(gfg_logger(),
           "ERROR: closure_matched_pose_idx is 0, this probably means this "
           "param is not correctly set, check!!");
     }
     bool cur_pose_valid =
         getPose(closure_matched_pose_idx, robotID, est_from_pose);
     if (!cur_pose_valid) {
-      ROS_ERROR_STREAM(
+      RCLCPP_ERROR_STREAM(gfg_logger(),
           "ERROR: get closure_matched_pose_idx fail to fetch pose for pose_idx "
           ": "
           << closure_matched_pose_idx);
@@ -204,10 +210,10 @@ void SemanticFactorGraph::addKeyPoseAndBetween(
         est_from_pose.matrix() * loop_closure_relative_pose.matrix();
     est_loop_closure_pose = gtsam::Pose3(est_pose_matrix);
 
-    ROS_INFO_STREAM("++++++++++++CLOSURE FACTOR BEING ADDED++++++++++++");
-    ROS_INFO_STREAM("loop_closure_relative_pose"
+    RCLCPP_INFO_STREAM(gfg_logger(), "++++++++++++CLOSURE FACTOR BEING ADDED++++++++++++");
+    RCLCPP_INFO_STREAM(gfg_logger(), "loop_closure_relative_pose"
                     << loop_closure_relative_pose.matrix());
-    ROS_INFO_STREAM("est_loop_closure_pose" << est_loop_closure_pose.matrix());
+    RCLCPP_INFO_STREAM(gfg_logger(), "est_loop_closure_pose" << est_loop_closure_pose.matrix());
 
     // No longer treating loop closure as a prior. Instead, use it as a proper
     // between factor add loop closure as a between factor
@@ -233,7 +239,7 @@ void SemanticFactorGraph::addKeyPoseAndBetween(
     fvalues.insert(getSymbol(robotID, curIdx), est_loop_closure_pose);
     // Only for active SLAM:
     // fvalues_loop.insert(getSymbol(robotID, curIdx),est_loop_closure_pose);
-    ROS_INFO_STREAM("loop_closure_relative_pose being added");
+    RCLCPP_INFO_STREAM(gfg_logger(), "loop_closure_relative_pose being added");
     // current_pose_global_ = est_loop_closure_pose;
   } else {
     auto odom_pose_prior_factor_noise = cur_noise_vec * 1.0;
@@ -308,7 +314,8 @@ void SemanticFactorGraph::addCubeFactor(
                         cube_local_meas, noise_model_cube));
 
   if (cube_local_meas.pose.translation().norm() > 50) {
-    ROS_WARN_THROTTLE(1, "cube_local_meas.pose.translation().norm() is larger "
+    RCLCPP_WARN_THROTTLE(gfg_logger(), *rclcpp::Clock::make_shared(), 1000,
+                         "cube_local_meas.pose.translation().norm() is larger "
                          "than 25 meters, maybe it is due to the front end keeping "
                          "track of observations over a long time or maybe it is because "
                          " the robot is moving fast!!");
@@ -380,8 +387,9 @@ bool SemanticFactorGraph::getPose(const size_t idx, const int &robotID,
     }
     // return currEstimate.at<Pose3>(getSymbol(robotID, idx));
   } else {
-    ROS_ERROR_STREAM("############# Error: "
-                     << robotID << " is an invalid robotID !!! #############");
+    RCLCPP_ERROR_STREAM(gfg_logger(),
+                        "############# Error: "
+                            << robotID << " is an invalid robotID !!! #############");
     // printf("############# Error: invalid robotID!!! #############\n");
     poseOut = Pose3();
     return false;
@@ -393,8 +401,9 @@ Eigen::MatrixXd SemanticFactorGraph::getPoseCovariance(const int idx,
   if (robotID >= 0 || robotID < MAX_NUM_ROBOTS) {
     return isam->marginalCovariance(getSymbol(robotID, idx));
   } else {
-    ROS_ERROR_STREAM("############# Error: "
-                     << robotID << " is an invalid robotID !!! #############");
+    RCLCPP_ERROR_STREAM(gfg_logger(),
+                        "############# Error: "
+                            << robotID << " is an invalid robotID !!! #############");
     return isam->marginalCovariance(getSymbol(robotID, idx));
   }
 }

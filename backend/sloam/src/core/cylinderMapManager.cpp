@@ -89,8 +89,9 @@ std::map<int, int> CylinderMapManager::getMatchesMap() const {
 const std::vector<SE3> &CylinderMapManager::getTrajectory(
     const int &robotID) const {
   if (robotID >= numRobots || robotID < 0) {
-    ROS_ERROR_STREAM("############# Error: "
-                     << robotID << " is an invalid robotID !!! #############");
+    RCLCPP_ERROR_STREAM(rclcpp::get_logger("CylinderMapManager"),
+                        "############# Error: "
+                            << robotID << " is an invalid robotID !!! #############");
 
     return robotKeyFrames_[0].poses;
   } else {
@@ -111,7 +112,9 @@ bool CylinderMapManager::InLoopClosureRegion(
     const int robotID, const size_t &at_least_num_of_poses_old) {
   // ROS_INFO_STREAM("Checking whether in loop closure region");
   if (robotPoseCloud_[robotID]->points.size() < at_least_num_of_poses_old) {
-    ROS_WARN_THROTTLE(3.0, "Not enough poses to check loop closure");
+    RCLCPP_WARN_THROTTLE(rclcpp::get_logger("CylinderMapManager"),
+                         *rclcpp::Clock::make_shared(), 3000,
+                         "Not enough poses to check loop closure");
     return false;
   }
   pcl::KdTreeFLANN<PointT> kdtree;

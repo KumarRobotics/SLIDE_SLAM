@@ -8,6 +8,7 @@
 */
 
 #include <cylinder.h>
+#include <rclcpp/rclcpp.hpp>
 
 Cylinder::Cylinder(const std::vector<TreeVertex> vertices, const Plane &gplane,
                    const FeatureModelParams &fmParams) {
@@ -145,7 +146,7 @@ void Cylinder::computeModel(const std::vector<TreeVertex> &landmarkVtxs,
   seg.segment(*inliers, *coefficients);
 
   if (inliers->indices.size() == 0) {
-    ROS_DEBUG_STREAM("RANSAC Line Fitting failed");
+    RCLCPP_DEBUG_STREAM(rclcpp::get_logger("cylinder"), "RANSAC Line Fitting failed");
     model.radius = -1;
     return;
   }

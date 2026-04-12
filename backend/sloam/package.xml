@@ -1,45 +1,54 @@
 <?xml version="1.0"?>
-<package format="2">
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
   <name>sloam</name>
-  <version>0.0.0</version>
-  <description>The SLOAM package</description>
+  <version>0.0.1</version>
+  <description>Core metric-semantic SLAM backend for SlideSLAM.</description>
+
+  <maintainer email="liuxushawn@gmail.com">Xu Liu</maintainer>
+  <maintainer email="praankit@seas.upenn.edu">Ankit Prabhu</maintainer>
+  <maintainer email="jiuzl@seas.upenn.edu">Jiuzhou Lei</maintainer>
 
   <author email="guilhermenardari@gmail.com">Guilherme Nardari</author>
-  <author email="liuxu@seas.upenn.edu">Xu Liu</author>
+  <author email="liuxushawn@gmail.com">Xu Liu</author>
   <author email="praankit@seas.upenn.edu">Ankit Prabhu</author>
   <author email="jiuzl@seas.upenn.edu">Jiuzhou Lei</author>
   <author email="yztao@seas.upenn.edu">Yuezhan Tao</author>
 
-  <maintainer email="liuxu@seas.upenn.edu">Xu Liu</maintainer>
-  <maintainer email="praankit@seas.upenn.edu">Ankit Prabhu</maintainer>
-  <maintainer email="jiuzl@seas.upenn.edu">Jiuzhou Lei</maintainer>
-
   <license>TODO</license>
 
-  <buildtool_depend>catkin</buildtool_depend>
-  <build_depend>message_generation</build_depend>
-  <exec_depend>message_runtime</exec_depend>
-  <depend>roscpp</depend>
-  <depend>Eigen</depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>rclcpp_action</depend>
+  <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
-  <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>visualization_msgs</depend>
   <depend>sloam_msgs</depend>
-  <depend>nodelet</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_eigen</depend>
   <depend>tf2_geometry_msgs</depend>
-  <depend>tf</depend>
   <depend>pcl_ros</depend>
   <depend>pcl_conversions</depend>
-  <depend>loop_closure</depend>
-  <depend>actionlib</depend>
-  <depend>actionlib_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>image_transport</depend>
+  <depend>message_filters</depend>
+  <depend>ament_index_cpp</depend>
+  <depend>eigen</depend>
+  <depend>libopencv-dev</depend>
+  <depend>libpcl-all-dev</depend>
+  <depend>libboost-all-dev</depend>
+  <depend>libyaml-cpp-dev</depend>
+  <depend>libgoogle-glog-dev</depend>
 
-  <!-- The export tag contains other, unspecified, tags -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
   <export>
-    <!-- Other tools can request additional information be placed here -->
-    <nodelet plugin="${prefix}/nodelet_plugins.xml" />
+    <build_type>ament_cmake</build_type>
   </export>
 </package>
