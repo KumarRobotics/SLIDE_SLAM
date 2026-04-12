@@ -15,7 +15,7 @@
 #include <gtsam/geometry/Rot3.h>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/transform_broadcaster.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -36,9 +36,9 @@
 #include <place_recognition.h>
 #include <sloam.h>
 #include <sloam_msgs/msg/ros_observation.hpp>
-#include <tf2/buffer_core.h>
+#include <tf2/buffer_core.hpp>
 #include <tf2_eigen/tf2_eigen.hpp>
-#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/transform_listener.hpp>
 #include <utils.h>
 #include <vizTools.h>
 

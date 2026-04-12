@@ -26,9 +26,9 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/image.hpp>
-#include <tf2/convert.h>
+#include <tf2/convert.hpp>
 #include <tf2_eigen/tf2_eigen.hpp>
-#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Quaternion.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
