@@ -10,7 +10,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     sloam_share = get_package_share_directory('sloam')
-    rviz_config = PathJoinSubstitution([sloam_share, 'launch', 'rviz', 'sloam.rviz'])
+    rviz_config = PathJoinSubstitution([sloam_share, 'launch', 'rviz', 'decentralized_sloam.rviz'])
     enable_rviz = LaunchConfiguration('enable_rviz')
 
     return LaunchDescription([

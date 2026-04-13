@@ -12,7 +12,7 @@ def generate_launch_description():
     enable_rviz = LaunchConfiguration('enable_rviz')
 
     sloam_share = get_package_share_directory('sloam')
-    rviz_config = PathJoinSubstitution([sloam_share, 'launch', 'rviz', 'sloam.rviz'])
+    rviz_config = PathJoinSubstitution([sloam_share, 'launch', 'rviz', 'decentralized_sloam.rviz'])
 
     return LaunchDescription([
         DeclareLaunchArgument('enable_rviz', default_value='true'),

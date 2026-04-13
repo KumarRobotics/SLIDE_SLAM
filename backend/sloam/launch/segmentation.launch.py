@@ -18,7 +18,7 @@ def generate_launch_description():
     sloam_yaml = PathJoinSubstitution([sloam_share, 'params', 'sloam_sim.yaml'])
     sim_yaml = PathJoinSubstitution([sloam_share, 'params', 'sim.yaml'])
     rviz_config = PathJoinSubstitution(
-        [sloam_share, 'launch', 'rviz', 'segmentation.rviz']
+        [sloam_share, 'launch', 'rviz', 'decentralized_sloam.rviz']
     )
 
     enable_rviz = LaunchConfiguration('enable_rviz')

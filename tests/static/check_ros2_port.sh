@@ -1108,6 +1108,386 @@ else
 fi
 
 
+# ----- managed-package list (shared across sections L/M/O/P) -----
+# Sections L and M already set this as a side-effect, but sections O/P
+# must not depend on those branches having run. Redefine defensively so
+# `set -u` is happy even when awk is unavailable.
+M_MANAGED_PKGS="${M_MANAGED_PKGS:-sloam sloam_msgs multi_robot_utils_launch object_modeller scan2shape_launch}"
+
+# ============================================================================
+# O. Cross-package #include <pkg/...> vs package.xml <depend>pkg</depend>
+# ============================================================================
+section "O. #include <pkg/...> cross-referenced against package.xml <depend>"
+#
+# For every C/C++ source file in an in-tree managed package (sloam,
+# sloam_msgs, multi_robot_utils_launch, object_modeller, scan2shape_launch),
+# extract every `#include <pkg/...>` / `#include "pkg/..."` top-level package
+# name, find the owning package.xml by walking up the directory tree, and
+# verify every non-exempt `pkg` appears in the package.xml's <depend>-like
+# tags. Self-includes, system headers, C++ stdlib, and certain known
+# third-party libs that are pulled via find_package() are skipped.
+#
+# Carve-outs:
+#   * backend/sloam/clipper_semantic_object/ — vendored third-party library
+#     added via add_subdirectory() rather than as a ROS package. Its headers
+#     live inside backend/sloam/ but it is not in scope for section O.
+
+if ! command -v awk >/dev/null 2>&1; then
+    skip "O  cross-package #include vs package.xml <depend>" "awk not available"
+else
+    # Exempt set: multi-token system headers resolved via find_package() +
+    # target_link_libraries rather than <depend>.
+    o_exempt_list=$'\nEigen\neigen3\nunsupported\nboost\ngtsam\npcl\nopencv2\nOpenCV\nfmt\nyaml-cpp\nglog\ntbb\ngtest\nbenchmark\nnetinet\narpa\nlinux\nfcntl\nunistd\npthread\nsys\nrcutils\nsophus\n'
+
+    # Collect all managed package.xml paths.
+    o_xmls_file=$(mktemp 2>/dev/null || printf '/tmp/o_xmls_%d' $$)
+    find "$REPO_ROOT/backend" "$REPO_ROOT/frontend" -type f -name 'package.xml' 2>/dev/null \
+        | LC_ALL=C sort > "$o_xmls_file"
+
+    # Map: pkg_name -> package.xml path; pkg_name -> newline-joined depends.
+    # We use flat files (not bash assoc arrays) because this is POSIX-ish.
+    o_xml_by_name=$(mktemp 2>/dev/null || printf '/tmp/o_xmlbyname_%d' $$)
+    o_deps_dir=$(mktemp -d 2>/dev/null || { d="/tmp/o_depsdir_$$"; mkdir -p "$d"; printf '%s' "$d"; })
+    while IFS= read -r xml; do
+        [ -z "$xml" ] && continue
+        name="$(package_xml_name "$xml")"
+        [ -z "$name" ] && continue
+        printf "%s\t%s\n" "$name" "$xml" >> "$o_xml_by_name"
+        package_xml_depends "$xml" > "$o_deps_dir/$name"
+    done < "$o_xmls_file"
+
+    # Build include-path top-dir -> owning pkg name map. For each managed
+    # package we scan its include/* subdirs and record the top-level dir
+    # name -> owning package name. This resolves cross-package includes
+    # whose top-level include dir name differs from the package name.
+    o_incl2pkg=$(mktemp 2>/dev/null || printf '/tmp/o_incl2pkg_%d' $$)
+    : > "$o_incl2pkg"
+    while IFS= read -r xml; do
+        [ -z "$xml" ] && continue
+        pname="$(package_xml_name "$xml")"
+        [ -z "$pname" ] && continue
+        pdir="$(dirname "$xml")"
+        [ -d "$pdir/include" ] || continue
+        find "$pdir/include" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while IFS= read -r sub; do
+            [ -z "$sub" ] && continue
+            b="$(basename "$sub")"
+            printf "%s\t%s\n" "$b" "$pname" >> "$o_incl2pkg"
+        done
+    done < "$o_xmls_file"
+
+    # Walk every C/C++ source file under the managed packages, skipping
+    # the vendored clipper_semantic_object tree entirely.
+    o_files=$(mktemp 2>/dev/null || printf '/tmp/o_files_%d' $$)
+    find "$REPO_ROOT/backend" "$REPO_ROOT/frontend" \
+        -type f \( -name '*.cpp' -o -name '*.cc' -o -name '*.h' -o -name '*.hpp' \) 2>/dev/null \
+        | grep -v '/clipper_semantic_object/' \
+        | LC_ALL=C sort > "$o_files"
+
+    o_fail=$(mktemp 2>/dev/null || printf '/tmp/o_fail_%d' $$)
+    o_hits=$(mktemp 2>/dev/null || printf '/tmp/o_hits_%d' $$)
+    : > "$o_fail"
+    : > "$o_hits"
+
+    o_file_count=0
+    while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        owning_xml="$(find_owning_package_xml "$f")"
+        [ -z "$owning_xml" ] && continue
+        owning_name="$(package_xml_name "$owning_xml")"
+        [ -z "$owning_name" ] && continue
+
+        # Only check files belonging to one of the 5 managed packages.
+        case " $M_MANAGED_PKGS " in
+            *" $owning_name "*) : ;;
+            *) continue ;;
+        esac
+
+        o_file_count=$((o_file_count + 1))
+
+        # Extract top-level pkg names from #include lines (both <...> and "...").
+        # Require a slash after pkg to skip C++ stdlib (`<string>`, `<vector>`, ...).
+        # strip_cpp_line_comments needs file:line:text format, so we inline the
+        # simpler approach: pipe file through a grep that ignores // commented
+        # includes on pure-comment lines. Raw awk form is used here to keep
+        # extraction self-contained.
+        pkgs=$(awk '
+            { line = $0 }
+            # Strip inline // comments (simple, not string-literal aware).
+            { sub(/\/\/.*$/, "", line) }
+            # Match #include <pkg/...> or #include "pkg/..."
+            match(line, /#include[[:space:]]*[<"][A-Za-z_][A-Za-z0-9_]*\//) {
+                chunk = substr(line, RSTART, RLENGTH)
+                # Pull the pkg token.
+                if (match(chunk, /[<"][A-Za-z_][A-Za-z0-9_]*\//)) {
+                    t = substr(chunk, RSTART + 1, RLENGTH - 2)
+                    print t
+                }
+            }
+        ' "$f" | LC_ALL=C sort -u)
+        [ -z "$pkgs" ] && continue
+
+        deps_file="$o_deps_dir/$owning_name"
+        [ -f "$deps_file" ] || continue
+
+        while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            printf "%s\n" "$pkg" >> "$o_hits"
+            # Skip exempt pkgs.
+            case "$o_exempt_list" in
+                *$'\n'"$pkg"$'\n'*) continue ;;
+            esac
+            # Skip self-include by raw name.
+            if [ "$pkg" = "$owning_name" ]; then
+                continue
+            fi
+            # Resolve include-path top-dir to package name if known.
+            resolved_pkg="$pkg"
+            rp="$(awk -F'\t' -v k="$pkg" '$1 == k { print $2; exit }' "$o_incl2pkg")"
+            if [ -n "$rp" ]; then
+                resolved_pkg="$rp"
+            fi
+            # Skip self-include via resolved name too.
+            if [ "$resolved_pkg" = "$owning_name" ]; then
+                continue
+            fi
+            # If declared in deps (raw or resolved), pass.
+            if grep -qxF "$pkg" "$deps_file" 2>/dev/null; then
+                continue
+            fi
+            if [ "$resolved_pkg" != "$pkg" ] && grep -qxF "$resolved_pkg" "$deps_file" 2>/dev/null; then
+                continue
+            fi
+            # Record the failure.
+            rel="${f#$REPO_ROOT/}"
+            if [ "$resolved_pkg" != "$pkg" ]; then
+                printf "%s: #include <%s/...> (-> pkg '%s') but '%s' not in %s\n" \
+                    "$rel" "$pkg" "$resolved_pkg" "$resolved_pkg" "$owning_name/package.xml" >> "$o_fail"
+            else
+                printf "%s: #include <%s/...> but '%s' not in %s\n" \
+                    "$rel" "$pkg" "$pkg" "$owning_name/package.xml" >> "$o_fail"
+            fi
+        done <<EOF
+$pkgs
+EOF
+    done < "$o_files"
+
+    o_unique_hits=$(LC_ALL=C sort -u "$o_hits" 2>/dev/null | awk 'NF' | wc -l | tr -d ' ')
+
+    if [ -s "$o_fail" ]; then
+        LC_ALL=C sort -u "$o_fail" -o "$o_fail"
+        o_count=$(wc -l < "$o_fail" | tr -d ' ')
+        fail "O  cross-package #include vs package.xml <depend>" \
+            "$o_count missing <depend> entr(y/ies) across $o_unique_hits distinct top-level names ($o_file_count files)"
+        if [ "$VERBOSE" = "1" ]; then
+            head -20 "$o_fail" | sed 's/^/         /'
+        fi
+    else
+        pass "O  every cross-package #include has a matching <depend> ($o_unique_hits top-level names, $o_file_count files)"
+    fi
+    rm -f "$o_fail" "$o_hits" "$o_files" "$o_xml_by_name" "$o_incl2pkg" "$o_xmls_file"
+    rm -rf "$o_deps_dir"
+fi
+
+# ============================================================================
+# P. Launch dict-parameter keys declared in target package source
+# ============================================================================
+section "P. Launch dict-parameter keys declared in target package source"
+#
+# For every Node(package=P, executable=E, parameters=[{...}]) call in a
+# launch file, verify every literal dict key is declared in P's source tree
+# as declare_parameter("key"...) (template or plain form), or via the
+# get_param_or / declare_parameter_if_not_declared wrappers used in the repo.
+# Catches the classic ROS2 bug where a launch file passes a parameter that
+# the target node silently ignores because it never calls declare_parameter.
+
+if ! command -v awk >/dev/null 2>&1; then
+    skip "P  launch dict-parameter keys declared in target package source" "awk not available"
+else
+    # Build pkg_name -> declared keys file map for each managed package.
+    p_decl_dir=$(mktemp -d 2>/dev/null || { d="/tmp/p_decldir_$$"; mkdir -p "$d"; printf '%s' "$d"; })
+
+    # Map managed pkg -> its directory.
+    p_pkg_dir() {
+        case "$1" in
+            sloam) printf '%s\n' "$REPO_ROOT/backend/sloam" ;;
+            sloam_msgs) printf '%s\n' "$REPO_ROOT/backend/sloam_msgs" ;;
+            multi_robot_utils_launch) printf '%s\n' "$REPO_ROOT/backend/multi_robot_utils_launch" ;;
+            object_modeller) printf '%s\n' "$REPO_ROOT/frontend/object_modeller" ;;
+            scan2shape_launch) printf '%s\n' "$REPO_ROOT/frontend/scan2shape/scan2shape_launch" ;;
+            *) printf '\n' ;;
+        esac
+    }
+
+    for pkg in $M_MANAGED_PKGS; do
+        pdir=$(p_pkg_dir "$pkg")
+        [ -z "$pdir" ] && continue
+        [ -d "$pdir" ] || continue
+        tmp_keys="$p_decl_dir/$pkg"
+        : > "$tmp_keys"
+        # Walk source and script files. Flatten with tr for multi-line
+        # declare_parameter<T>(\n "key", ...) calls.
+        find "$pdir" -type f \( -name '*.cpp' -o -name '*.cc' -o -name '*.h' -o -name '*.hpp' -o -name '*.py' \) 2>/dev/null \
+            | grep -v '/clipper_semantic_object/' \
+            | while IFS= read -r sf; do
+                [ -z "$sf" ] && continue
+                if [ "${sf##*.}" = "py" ]; then
+                    # Strip # comments line-by-line (crude; fine for our use).
+                    awk '{ sub(/#.*$/, ""); print }' "$sf" \
+                        | tr '\n' ' ' \
+                        | grep -oE "declare_parameter[[:space:]]*\([[:space:]]*['\"][^'\"]+['\"]" 2>/dev/null \
+                        | sed -E "s/.*['\"]([^'\"]+)['\"].*/\1/" >> "$tmp_keys" || true
+                else
+                    # Strip // line comments and flatten multi-line calls.
+                    awk '{ sub(/\/\/.*$/, ""); print }' "$sf" \
+                        | tr '\n' ' ' > "$p_decl_dir/__flat"
+                    grep -oE 'declare_parameter[[:space:]]*(<[^>]*>)?[[:space:]]*\([[:space:]]*"[^"]+"' "$p_decl_dir/__flat" 2>/dev/null \
+                        | sed -E 's/.*"([^"]+)".*/\1/' >> "$tmp_keys" || true
+                    # Also capture _declare_or_get<T>(node, "key", default) wrapper form.
+                    grep -oE '_declare_or_get[[:space:]]*<[^>]*>[[:space:]]*\([[:space:]]*[A-Za-z_][A-Za-z0-9_>.]*[[:space:]]*,[[:space:]]*"[^"]+"' "$p_decl_dir/__flat" 2>/dev/null \
+                        | sed -E 's/.*,[[:space:]]*"([^"]+)".*/\1/' >> "$tmp_keys" || true
+                    # get_param_or(node, "key", var, default) and
+                    # declare_parameter_if_not_declared(node, "key", ...).
+                    grep -oE '\bget_param_or[[:space:]]*\([[:space:]]*[A-Za-z_][A-Za-z0-9_>.]*[[:space:]]*,[[:space:]]*"[^"]+"' "$p_decl_dir/__flat" 2>/dev/null \
+                        | sed -E 's/.*,[[:space:]]*"([^"]+)".*/\1/' >> "$tmp_keys" || true
+                    grep -oE '\bdeclare_parameter_if_not_declared[[:space:]]*\([[:space:]]*[A-Za-z_][A-Za-z0-9_>.]*[[:space:]]*,[[:space:]]*"[^"]+"' "$p_decl_dir/__flat" 2>/dev/null \
+                        | sed -E 's/.*,[[:space:]]*"([^"]+)".*/\1/' >> "$tmp_keys" || true
+                fi
+            done
+        rm -f "$p_decl_dir/__flat"
+        LC_ALL=C sort -u "$tmp_keys" -o "$tmp_keys" 2>/dev/null || true
+    done
+
+    p_fail=$(mktemp 2>/dev/null || printf '/tmp/p_fail_%d' $$)
+    : > "$p_fail"
+    p_nodes=0
+
+    # Walk every .launch.py and extract Node(...) blocks.
+    find "$REPO_ROOT/backend" "$REPO_ROOT/frontend" -type f -name '*.launch.py' 2>/dev/null \
+        | LC_ALL=C sort \
+        | while IFS= read -r lf; do
+            [ -z "$lf" ] && continue
+            rel="${lf#$REPO_ROOT/}"
+            # Slurp and flatten newlines.
+            joined=$(tr '\n' ' ' < "$lf")
+            # Extract Node( ... ) blocks. Node must not be preceded by a word char
+            # (avoids ComposableNode / LifecycleNode).
+            blocks=$(printf "%s" "$joined" \
+                | grep -oE "(^|[^A-Za-z0-9_])Node[[:space:]]*\([^)]{0,2000}\)" 2>/dev/null || true)
+            [ -z "$blocks" ] && continue
+            printf '%s\n' "$blocks" | while IFS= read -r blk; do
+                [ -z "$blk" ] && continue
+                pkg=$(printf "%s" "$blk" \
+                    | grep -oE "package[[:space:]]*=[[:space:]]*['\"][^'\"]+['\"]" \
+                    | head -1 | sed -E "s/.*['\"]([^'\"]+)['\"]/\1/")
+                exe=$(printf "%s" "$blk" \
+                    | grep -oE "executable[[:space:]]*=[[:space:]]*['\"][^'\"]+['\"]" \
+                    | head -1 | sed -E "s/.*['\"]([^'\"]+)['\"]/\1/")
+                [ -z "$pkg" ] && continue
+                case " $M_MANAGED_PKGS " in
+                    *" $pkg "*) : ;;
+                    *) continue ;;
+                esac
+                # Increment via file (subshell safe).
+                printf 'x\n' >> "$p_fail.nodes"
+                # Extract parameters=[...] list up to first closing bracket.
+                plist=$(printf "%s" "$blk" \
+                    | grep -oE "parameters[[:space:]]*=[[:space:]]*\[[^]]*\]" \
+                    | head -1 || true)
+                [ -z "$plist" ] && continue
+                keys=$(printf "%s" "$plist" \
+                    | grep -oE "['\"][A-Za-z_][A-Za-z0-9_.]*['\"][[:space:]]*:" \
+                    | sed -E "s/['\"]([^'\"]+)['\"].*/\1/" \
+                    | LC_ALL=C sort -u)
+                [ -z "$keys" ] && continue
+                declared_file="$p_decl_dir/$pkg"
+                [ -f "$declared_file" ] || declared_file=/dev/null
+                printf '%s\n' "$keys" | while IFS= read -r key; do
+                    [ -z "$key" ] && continue
+                    # Skip resource-path-like keys.
+                    case "$key" in
+                        /*|*.yaml|*.yml|*.launch.py) continue ;;
+                    esac
+                    if ! grep -qxF "$key" "$declared_file" 2>/dev/null; then
+                        printf "%s: Node(package='%s', executable='%s') parameters=[{'%s': ...}] but no declare_parameter(\"%s\", ...) found in %s source tree\n" \
+                            "$rel" "$pkg" "$exe" "$key" "$key" "$pkg" >> "$p_fail"
+                    fi
+                done
+            done
+        done
+
+    if [ -f "$p_fail.nodes" ]; then
+        p_nodes=$(wc -l < "$p_fail.nodes" | tr -d ' ')
+        rm -f "$p_fail.nodes"
+    fi
+
+    if [ -s "$p_fail" ]; then
+        LC_ALL=C sort -u "$p_fail" -o "$p_fail"
+        p_count=$(wc -l < "$p_fail" | tr -d ' ')
+        fail "P  launch dict-parameter keys declared in target package" \
+            "$p_count undeclared key(s) across $p_nodes Node(...) call(s)"
+        if [ "$VERBOSE" = "1" ]; then
+            head -20 "$p_fail" | sed 's/^/         /'
+        fi
+    else
+        pass "P  all launch dict-parameter keys are declared in their target package ($p_nodes Node calls analyzed)"
+    fi
+    rm -f "$p_fail"
+    rm -rf "$p_decl_dir"
+fi
+
+# ============================================================================
+# Q. Shell script syntax sweep (bash -n)
+# ============================================================================
+section "Q. Shell script syntax (bash -n)"
+#
+# Run `bash -n` on every .sh/.bash file under backend/, frontend/, tools/,
+# tests/. Any syntactically-invalid script fails the check. Skipped if
+# bash -n is unusable in the runtime sandbox.
+
+q_scripts=$(find "$REPO_ROOT/backend" "$REPO_ROOT/frontend" "$REPO_ROOT/tools" "$REPO_ROOT/tests" \
+    -type f \( -name '*.sh' -o -name '*.bash' \) 2>/dev/null \
+    | grep -v '/clipper_semantic_object/' \
+    | LC_ALL=C sort || true)
+
+if [ -z "$q_scripts" ]; then
+    skip "Q  bash -n shell script syntax sweep" "no shell scripts found"
+else
+    # Capability probe: bash -n on a trivially-correct script.
+    q_probe=$(mktemp 2>/dev/null || printf '/tmp/q_probe_%d' $$)
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$q_probe"
+    if ! bash -n "$q_probe" 2>/dev/null; then
+        rm -f "$q_probe"
+        skip "Q  bash -n shell script syntax sweep" "bash -n not usable in this environment"
+    else
+        rm -f "$q_probe"
+        q_fail=$(mktemp 2>/dev/null || printf '/tmp/q_fail_%d' $$)
+        : > "$q_fail"
+        q_count=0
+        while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            q_count=$((q_count + 1))
+            if ! bash -n "$f" 2>>"$q_fail"; then
+                rel="${f#$REPO_ROOT/}"
+                printf "  [syntax error in] %s\n" "$rel" >> "$q_fail"
+            fi
+        done <<EOF
+$q_scripts
+EOF
+        if [ -s "$q_fail" ]; then
+            q_err_count=$(grep -c '^' "$q_fail" 2>/dev/null || echo 0)
+            fail "Q  bash -n shell script syntax sweep" \
+                "bash -n reported errors in $q_count shell script(s)"
+            if [ "$VERBOSE" = "1" ]; then
+                head -20 "$q_fail" | sed 's/^/         /'
+            fi
+        else
+            pass "Q  all $q_count shell script(s) parse cleanly with bash -n"
+        fi
+        rm -f "$q_fail"
+    fi
+fi
+
+
 # ============================================================================
 # Summary
 # ============================================================================
