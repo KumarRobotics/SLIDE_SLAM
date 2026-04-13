@@ -1,9 +1,9 @@
 # `tests/static/` — bash static-check runner
 
-A single-file bash script that runs ten classes of static checks against the
-SlideSLAM `ros2_dev` branch. Zero Python, zero ROS dependencies; only
-`bash`, `find`, `awk`, and either `ripgrep` (preferred) or `grep -r`
-(fallback).
+A single-file bash script that runs seventeen classes of static checks
+(sections A-Q) against the SlideSLAM `ros2_dev` branch. Zero Python, zero
+ROS dependencies; only `bash`, `find`, `awk`, and either `ripgrep`
+(preferred) or `grep -r` (fallback).
 
 ## Usage
 
@@ -35,6 +35,13 @@ The runner:
 | **H**   | Every `install(PROGRAMS ...)` token in any CMakeLists points at a file that exists on disk |
 | **I**   | No `nodelet_plugins.xml` files anywhere |
 | **J**   | No `*.launch` XML files anywhere outside `tools/` or `tests/` |
+| **K**   | Within each `*.launch.py`, every `LaunchConfiguration('x')` has a matching `DeclareLaunchArgument('x', ...)` in the same file |
+| **L**   | No hardcoded `/home/<user>/`, `/root/`, `/opt/slideslam_docker_ws`, `/opt/bags/` paths in source |
+| **M**   | Every `Node(package='<managed>', executable='<y>')` resolves to an `add_executable` target or an `install(PROGRAMS)` entry in `<managed>`'s `CMakeLists.txt` |
+| **N**   | No duplicate raw `declare_parameter("key", ...)` calls across files within the same package (`declare_or_get<T>(...)` wrapper calls are ignored) |
+| **O**   | Every `#include <pkg/...>` in a managed package's C/C++ sources resolves to an entry in that package's `package.xml`. Owning-package is resolved by walking up the directory tree. System libs (`Eigen`, `boost`, `pcl`, `gtsam`, `sophus`, `opencv2`, `yaml-cpp`, `fmt`, `glog`, `tbb`, `gtest`, `benchmark`, POSIX headers) are exempt because they're pulled via `find_package` + `target_link_libraries`, not `<depend>`. `backend/sloam/clipper_semantic_object/` is exempt entirely (vendored third-party `add_subdirectory()`, not a ROS package). |
+| **P**   | For every `Node(package='<managed>', executable='<y>', parameters=[{'k': v, ...}])` in a `*.launch.py`, every literal dict key `k` is declared in the target package's source as `declare_parameter("k", ...)` (template or plain form), the `declare_or_get<T>(node, "k", ...)` wrapper, `get_param_or(node, "k", ...)`, or `declare_parameter_if_not_declared(node, "k", ...)`. Catches the classic ROS2 bug where a launch file passes a parameter that the target node silently ignores because it never calls `declare_parameter`. Only dict-literal `parameters=[{...}]` is analyzed; yaml-file-path parameters, `ComposableNode`s, and dynamically-built `params` variables are skipped. `scan2shape_launch` additionally walks `frontend/scan2shape/script/` because it installs scripts from that sibling directory. |
+| **Q**   | Every `*.sh` / `*.bash` under `backend/`, `frontend/`, `tools/`, and `tests/` passes `bash -n`. Skipped (with a clear reason) when `bash -n` isn't usable in the runtime sandbox. |
 
 ## Carve-outs
 

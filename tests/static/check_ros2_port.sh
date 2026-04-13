@@ -1135,6 +1135,10 @@ section "O. #include <pkg/...> cross-referenced against package.xml <depend>"
 if ! command -v awk >/dev/null 2>&1; then
     skip "O  cross-package #include vs package.xml <depend>" "awk not available"
 else
+    # Relax set -e locally: grep-heavy code that legitimately returns
+    # non-zero when nothing matches.
+    set +e
+
     # Exempt set: multi-token system headers resolved via find_package() +
     # target_link_libraries rather than <depend>.
     o_exempt_list=$'\nEigen\neigen3\nunsupported\nboost\ngtsam\npcl\nopencv2\nOpenCV\nfmt\nyaml-cpp\nglog\ntbb\ngtest\nbenchmark\nnetinet\narpa\nlinux\nfcntl\nunistd\npthread\nsys\nrcutils\nsophus\n'
@@ -1286,6 +1290,8 @@ EOF
     fi
     rm -f "$o_fail" "$o_hits" "$o_files" "$o_xml_by_name" "$o_incl2pkg" "$o_xmls_file"
     rm -rf "$o_deps_dir"
+
+    set -e
 fi
 
 # ============================================================================
@@ -1303,125 +1309,140 @@ section "P. Launch dict-parameter keys declared in target package source"
 if ! command -v awk >/dev/null 2>&1; then
     skip "P  launch dict-parameter keys declared in target package source" "awk not available"
 else
+    # Relax set -e locally: this section uses a lot of grep/pipes that
+    # legitimately return non-zero when they find nothing. We'll re-enable
+    # at the end of the section.
+    set +e
+
     # Build pkg_name -> declared keys file map for each managed package.
     p_decl_dir=$(mktemp -d 2>/dev/null || { d="/tmp/p_decldir_$$"; mkdir -p "$d"; printf '%s' "$d"; })
 
-    # Map managed pkg -> its directory.
-    p_pkg_dir() {
+    # Map managed pkg -> its source search roots. Some packages install
+    # from sibling directories (scan2shape_launch installs scripts from
+    # frontend/scan2shape/script/), so we allow multiple roots per pkg.
+    p_pkg_dirs() {
         case "$1" in
             sloam) printf '%s\n' "$REPO_ROOT/backend/sloam" ;;
             sloam_msgs) printf '%s\n' "$REPO_ROOT/backend/sloam_msgs" ;;
             multi_robot_utils_launch) printf '%s\n' "$REPO_ROOT/backend/multi_robot_utils_launch" ;;
             object_modeller) printf '%s\n' "$REPO_ROOT/frontend/object_modeller" ;;
-            scan2shape_launch) printf '%s\n' "$REPO_ROOT/frontend/scan2shape/scan2shape_launch" ;;
+            scan2shape_launch)
+                printf '%s\n' "$REPO_ROOT/frontend/scan2shape/scan2shape_launch"
+                printf '%s\n' "$REPO_ROOT/frontend/scan2shape/script"
+                ;;
             *) printf '\n' ;;
         esac
     }
 
+    # Collect every declared parameter key across the 5 managed packages.
+    # For each managed package, walk its source and script roots, flatten
+    # multi-line declare_parameter<T>(\n "key", ...) calls with tr, then
+    # grep out the keys. The result is one file per package under
+    # $p_decl_dir/<pkg_name>, each containing one declared key per line.
+    p_srcs=$(mktemp 2>/dev/null || printf '/tmp/p_srcs_%d' $$)
     for pkg in $M_MANAGED_PKGS; do
-        pdir=$(p_pkg_dir "$pkg")
-        [ -z "$pdir" ] && continue
-        [ -d "$pdir" ] || continue
         tmp_keys="$p_decl_dir/$pkg"
         : > "$tmp_keys"
-        # Walk source and script files. Flatten with tr for multi-line
-        # declare_parameter<T>(\n "key", ...) calls.
-        find "$pdir" -type f \( -name '*.cpp' -o -name '*.cc' -o -name '*.h' -o -name '*.hpp' -o -name '*.py' \) 2>/dev/null \
-            | grep -v '/clipper_semantic_object/' \
-            | while IFS= read -r sf; do
-                [ -z "$sf" ] && continue
-                if [ "${sf##*.}" = "py" ]; then
-                    # Strip # comments line-by-line (crude; fine for our use).
-                    awk '{ sub(/#.*$/, ""); print }' "$sf" \
-                        | tr '\n' ' ' \
-                        | grep -oE "declare_parameter[[:space:]]*\([[:space:]]*['\"][^'\"]+['\"]" 2>/dev/null \
-                        | sed -E "s/.*['\"]([^'\"]+)['\"].*/\1/" >> "$tmp_keys" || true
-                else
-                    # Strip // line comments and flatten multi-line calls.
-                    awk '{ sub(/\/\/.*$/, ""); print }' "$sf" \
-                        | tr '\n' ' ' > "$p_decl_dir/__flat"
-                    grep -oE 'declare_parameter[[:space:]]*(<[^>]*>)?[[:space:]]*\([[:space:]]*"[^"]+"' "$p_decl_dir/__flat" 2>/dev/null \
-                        | sed -E 's/.*"([^"]+)".*/\1/' >> "$tmp_keys" || true
-                    # Also capture _declare_or_get<T>(node, "key", default) wrapper form.
-                    grep -oE '_declare_or_get[[:space:]]*<[^>]*>[[:space:]]*\([[:space:]]*[A-Za-z_][A-Za-z0-9_>.]*[[:space:]]*,[[:space:]]*"[^"]+"' "$p_decl_dir/__flat" 2>/dev/null \
-                        | sed -E 's/.*,[[:space:]]*"([^"]+)".*/\1/' >> "$tmp_keys" || true
-                    # get_param_or(node, "key", var, default) and
-                    # declare_parameter_if_not_declared(node, "key", ...).
-                    grep -oE '\bget_param_or[[:space:]]*\([[:space:]]*[A-Za-z_][A-Za-z0-9_>.]*[[:space:]]*,[[:space:]]*"[^"]+"' "$p_decl_dir/__flat" 2>/dev/null \
-                        | sed -E 's/.*,[[:space:]]*"([^"]+)".*/\1/' >> "$tmp_keys" || true
-                    grep -oE '\bdeclare_parameter_if_not_declared[[:space:]]*\([[:space:]]*[A-Za-z_][A-Za-z0-9_>.]*[[:space:]]*,[[:space:]]*"[^"]+"' "$p_decl_dir/__flat" 2>/dev/null \
-                        | sed -E 's/.*,[[:space:]]*"([^"]+)".*/\1/' >> "$tmp_keys" || true
-                fi
-            done
+        : > "$p_srcs"
+        p_pkg_dirs "$pkg" | while IFS= read -r pdir; do
+            [ -z "$pdir" ] && continue
+            [ -d "$pdir" ] || continue
+            find "$pdir" -type f \( -name '*.cpp' -o -name '*.cc' -o -name '*.h' -o -name '*.hpp' -o -name '*.py' \) 2>/dev/null \
+                | grep -v '/clipper_semantic_object/' >> "$p_srcs"
+        done
+        while IFS= read -r sf; do
+            [ -z "$sf" ] && continue
+            if [ "${sf##*.}" = "py" ]; then
+                awk '{ sub(/#.*$/, ""); print }' "$sf" 2>/dev/null \
+                    | tr '\n' ' ' \
+                    | grep -oE "declare_parameter[[:space:]]*\([[:space:]]*['\"][^'\"]+['\"]" 2>/dev/null \
+                    | sed -E "s/.*['\"]([^'\"]+)['\"].*/\1/" >> "$tmp_keys"
+            else
+                awk '{ sub(/\/\/.*$/, ""); print }' "$sf" 2>/dev/null \
+                    | tr '\n' ' ' > "$p_decl_dir/__flat"
+                # Plain ROS2 form: declare_parameter("key") with optional <T>.
+                grep -oE 'declare_parameter[[:space:]]*(<[^>]*>)?[[:space:]]*\([[:space:]]*"[^"]+"' "$p_decl_dir/__flat" 2>/dev/null \
+                    | sed -E 's/.*"([^"]+)".*/\1/' >> "$tmp_keys"
+                # sloam wrapper forms:
+                #   declare_or_get<T>(node, "key", default)
+                #   <prefix>_declare_or_get<T>(node, "key", default)
+                # Both are captured by not requiring a leading underscore.
+                grep -oE '[A-Za-z_]*declare_or_get[[:space:]]*<[^>]*>[[:space:]]*\([[:space:]]*[A-Za-z_][A-Za-z0-9_>.]*[[:space:]]*,[[:space:]]*"[^"]+"' "$p_decl_dir/__flat" 2>/dev/null \
+                    | sed -E 's/.*,[[:space:]]*"([^"]+)".*/\1/' >> "$tmp_keys"
+                # get_param_or(node, "key", var, default) and
+                # declare_parameter_if_not_declared(node, "key", ...).
+                grep -oE '\bget_param_or[[:space:]]*\([[:space:]]*[A-Za-z_][A-Za-z0-9_>.]*[[:space:]]*,[[:space:]]*"[^"]+"' "$p_decl_dir/__flat" 2>/dev/null \
+                    | sed -E 's/.*,[[:space:]]*"([^"]+)".*/\1/' >> "$tmp_keys"
+                grep -oE '\bdeclare_parameter_if_not_declared[[:space:]]*\([[:space:]]*[A-Za-z_][A-Za-z0-9_>.]*[[:space:]]*,[[:space:]]*"[^"]+"' "$p_decl_dir/__flat" 2>/dev/null \
+                    | sed -E 's/.*,[[:space:]]*"([^"]+)".*/\1/' >> "$tmp_keys"
+            fi
+        done < "$p_srcs"
         rm -f "$p_decl_dir/__flat"
-        LC_ALL=C sort -u "$tmp_keys" -o "$tmp_keys" 2>/dev/null || true
+        LC_ALL=C sort -u "$tmp_keys" -o "$tmp_keys" 2>/dev/null
     done
+    rm -f "$p_srcs"
 
     p_fail=$(mktemp 2>/dev/null || printf '/tmp/p_fail_%d' $$)
     : > "$p_fail"
+    p_lfs=$(mktemp 2>/dev/null || printf '/tmp/p_lfs_%d' $$)
+    find "$REPO_ROOT/backend" "$REPO_ROOT/frontend" -type f -name '*.launch.py' 2>/dev/null \
+        | LC_ALL=C sort > "$p_lfs"
     p_nodes=0
 
-    # Walk every .launch.py and extract Node(...) blocks.
-    find "$REPO_ROOT/backend" "$REPO_ROOT/frontend" -type f -name '*.launch.py' 2>/dev/null \
-        | LC_ALL=C sort \
-        | while IFS= read -r lf; do
-            [ -z "$lf" ] && continue
-            rel="${lf#$REPO_ROOT/}"
-            # Slurp and flatten newlines.
-            joined=$(tr '\n' ' ' < "$lf")
-            # Extract Node( ... ) blocks. Node must not be preceded by a word char
-            # (avoids ComposableNode / LifecycleNode).
-            blocks=$(printf "%s" "$joined" \
-                | grep -oE "(^|[^A-Za-z0-9_])Node[[:space:]]*\([^)]{0,2000}\)" 2>/dev/null || true)
-            [ -z "$blocks" ] && continue
-            printf '%s\n' "$blocks" | while IFS= read -r blk; do
-                [ -z "$blk" ] && continue
-                pkg=$(printf "%s" "$blk" \
-                    | grep -oE "package[[:space:]]*=[[:space:]]*['\"][^'\"]+['\"]" \
-                    | head -1 | sed -E "s/.*['\"]([^'\"]+)['\"]/\1/")
-                exe=$(printf "%s" "$blk" \
-                    | grep -oE "executable[[:space:]]*=[[:space:]]*['\"][^'\"]+['\"]" \
-                    | head -1 | sed -E "s/.*['\"]([^'\"]+)['\"]/\1/")
-                [ -z "$pkg" ] && continue
-                case " $M_MANAGED_PKGS " in
-                    *" $pkg "*) : ;;
-                    *) continue ;;
+    while IFS= read -r lf; do
+        [ -z "$lf" ] && continue
+        rel="${lf#$REPO_ROOT/}"
+        joined=$(tr '\n' ' ' < "$lf" 2>/dev/null)
+        [ -z "$joined" ] && continue
+        # Extract Node( ... ) blocks; Node must not be preceded by a word
+        # character (avoids ComposableNode / LifecycleNode).
+        blocks=$(printf "%s" "$joined" \
+            | grep -oE "(^|[^A-Za-z0-9_])Node[[:space:]]*\([^)]{0,2000}\)" 2>/dev/null)
+        [ -z "$blocks" ] && continue
+        # Split blocks on newlines — each match starts at a non-word char.
+        printf '%s\n' "$blocks" > "$p_decl_dir/__blks"
+        while IFS= read -r blk; do
+            [ -z "$blk" ] && continue
+            pkg=$(printf "%s" "$blk" \
+                | grep -oE "package[[:space:]]*=[[:space:]]*['\"][^'\"]+['\"]" 2>/dev/null \
+                | head -1 | sed -E "s/.*['\"]([^'\"]+)['\"]/\1/")
+            exe=$(printf "%s" "$blk" \
+                | grep -oE "executable[[:space:]]*=[[:space:]]*['\"][^'\"]+['\"]" 2>/dev/null \
+                | head -1 | sed -E "s/.*['\"]([^'\"]+)['\"]/\1/")
+            [ -z "$pkg" ] && continue
+            case " $M_MANAGED_PKGS " in
+                *" $pkg "*) : ;;
+                *) continue ;;
+            esac
+            p_nodes=$((p_nodes + 1))
+            plist=$(printf "%s" "$blk" \
+                | grep -oE "parameters[[:space:]]*=[[:space:]]*\[[^]]*\]" 2>/dev/null \
+                | head -1)
+            [ -z "$plist" ] && continue
+            keys=$(printf "%s" "$plist" \
+                | grep -oE "['\"][A-Za-z_][A-Za-z0-9_.]*['\"][[:space:]]*:" 2>/dev/null \
+                | sed -E "s/['\"]([^'\"]+)['\"].*/\1/" \
+                | LC_ALL=C sort -u)
+            [ -z "$keys" ] && continue
+            declared_file="$p_decl_dir/$pkg"
+            [ -f "$declared_file" ] || declared_file=/dev/null
+            printf '%s\n' "$keys" > "$p_decl_dir/__keys"
+            while IFS= read -r key; do
+                [ -z "$key" ] && continue
+                case "$key" in
+                    /*|*.yaml|*.yml|*.launch.py) continue ;;
                 esac
-                # Increment via file (subshell safe).
-                printf 'x\n' >> "$p_fail.nodes"
-                # Extract parameters=[...] list up to first closing bracket.
-                plist=$(printf "%s" "$blk" \
-                    | grep -oE "parameters[[:space:]]*=[[:space:]]*\[[^]]*\]" \
-                    | head -1 || true)
-                [ -z "$plist" ] && continue
-                keys=$(printf "%s" "$plist" \
-                    | grep -oE "['\"][A-Za-z_][A-Za-z0-9_.]*['\"][[:space:]]*:" \
-                    | sed -E "s/['\"]([^'\"]+)['\"].*/\1/" \
-                    | LC_ALL=C sort -u)
-                [ -z "$keys" ] && continue
-                declared_file="$p_decl_dir/$pkg"
-                [ -f "$declared_file" ] || declared_file=/dev/null
-                printf '%s\n' "$keys" | while IFS= read -r key; do
-                    [ -z "$key" ] && continue
-                    # Skip resource-path-like keys.
-                    case "$key" in
-                        /*|*.yaml|*.yml|*.launch.py) continue ;;
-                    esac
-                    if ! grep -qxF "$key" "$declared_file" 2>/dev/null; then
-                        printf "%s: Node(package='%s', executable='%s') parameters=[{'%s': ...}] but no declare_parameter(\"%s\", ...) found in %s source tree\n" \
-                            "$rel" "$pkg" "$exe" "$key" "$key" "$pkg" >> "$p_fail"
-                    fi
-                done
-            done
-        done
-
-    if [ -f "$p_fail.nodes" ]; then
-        p_nodes=$(wc -l < "$p_fail.nodes" | tr -d ' ')
-        rm -f "$p_fail.nodes"
-    fi
+                if ! grep -qxF "$key" "$declared_file" 2>/dev/null; then
+                    printf "%s: Node(package='%s', executable='%s') parameters=[{'%s': ...}] but no declare_parameter(\"%s\", ...) found in %s source tree\n" \
+                        "$rel" "$pkg" "$exe" "$key" "$key" "$pkg" >> "$p_fail"
+                fi
+            done < "$p_decl_dir/__keys"
+        done < "$p_decl_dir/__blks"
+    done < "$p_lfs"
+    rm -f "$p_lfs" "$p_decl_dir/__blks" "$p_decl_dir/__keys"
 
     if [ -s "$p_fail" ]; then
-        LC_ALL=C sort -u "$p_fail" -o "$p_fail"
+        LC_ALL=C sort -u "$p_fail" -o "$p_fail" 2>/dev/null
         p_count=$(wc -l < "$p_fail" | tr -d ' ')
         fail "P  launch dict-parameter keys declared in target package" \
             "$p_count undeclared key(s) across $p_nodes Node(...) call(s)"
@@ -1433,6 +1454,8 @@ else
     fi
     rm -f "$p_fail"
     rm -rf "$p_decl_dir"
+
+    set -e
 fi
 
 # ============================================================================
