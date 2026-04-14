@@ -424,11 +424,11 @@ If you want to terminate this program, go to the last terminal window and press 
 
 The `ros2_dev` branch ships a static test suite under [`tests/`](tests/) that future contributors can run to regression-check the port without needing a full ROS2 Jazzy build environment. The suite has three layers — a pure-bash static checker, a pytest mirror, and a runtime launch-graph smoke test. See [`tests/README.md`](tests/README.md) for per-layer usage notes.
 
-**Current state (after the port + the review passes done on this branch):** `bash tests/static/check_ros2_port.sh` reports **51 checks, 51 passed, 0 failed, 0 skipped**.
+**Current state (after the port + the review passes done on this branch):** `bash tests/static/check_ros2_port.sh` reports **54 checks, 54 passed, 0 failed, 0 skipped**.
 
 ## Static checks (`tests/static/check_ros2_port.sh`)
 
-Pure bash + [ripgrep](https://github.com/BurntSushi/ripgrep) + `awk`. Runs anywhere with zero Python or ROS2 dependencies. **51 checks across 14 sections (A–N)** verifying:
+Pure bash + [ripgrep](https://github.com/BurntSushi/ripgrep) + `awk`. Runs anywhere with zero Python or ROS2 dependencies. **54 checks across 17 sections (A–Q)** verifying:
 
 - **A** — no ROS1 C++ idioms in active source under `backend/sloam/` and `frontend/object_modeller/` (21 sub-checks). Verifies zero occurrences of: `ros/ros.h`, `ros/package.h`, old-style message includes (`<pkg/Type.h>`), `tf/` headers, `nodelet/`, `pluginlib/`, `actionlib/`, `ros::NodeHandle`, `ros::Publisher`, `ros::Subscriber`, `ros::Time::now()`, `ros::Duration`, `ros::Rate`, `ros::init`, `ros::spin`/`spinOnce`, `ros::ok`, `ROS_INFO`/`WARN`/`ERROR`/`DEBUG`/`FATAL`, `nodelet::Nodelet`, `PLUGINLIB_EXPORT_CLASS`, `actionlib::`.
 - **B** — no ROS1 Python idioms under `frontend/object_modeller/` and `frontend/scan2shape/` (6 sub-checks): no `import rospy` / `from rospy`, no `rospy.*` attribute access, no bare `import tf` / `from tf.*`, no `ros_numpy`, no `rospkg`.
@@ -444,6 +444,9 @@ Pure bash + [ripgrep](https://github.com/BurntSushi/ripgrep) + `awk`. Runs anywh
 - **L** — no hardcoded user-specific absolute paths (`/home/<user>/`, `/opt/slideslam_docker_ws`, `/opt/bags/`, `/root/`) in any `.cpp`/`.h`/`.hpp`/`.py` source file. Strips C and Python comments before matching.
 - **M** — every `Node(package='<local_pkg>', executable='<y>')` call in every `*.launch.py` resolves to either an `add_executable(<y> ...)` target or an `install(PROGRAMS .../<y>)` entry in the target package's `CMakeLists.txt`. Local packages are `sloam`, `sloam_msgs`, `multi_robot_utils_launch`, `object_modeller`, `scan2shape_launch`; external packages (`tf2_ros`, `topic_tools`, `rviz2`, third-party drivers, etc.) are skipped.
 - **N** — no raw `declare_parameter("key", ...)` call appears in 2+ source files within the same package. ROS2 throws `rclcpp::exceptions::ParameterAlreadyDeclared` at runtime if the same parameter is declared twice on the same node, so this is a real hazard. The safe `*_declare_or_get<T>(node, "key", default)` wrapper family used throughout `backend/sloam` (`in_declare_or_get`, `sn_declare_or_get`, `pr_declare_or_get`, plain `declare_or_get`) is explicitly exempted — those wrappers guard with `node->has_parameter()` before declaring, so multiple callers on the same key are safe.
+- **O** — every `#include <pkg/...>` in a managed package's C/C++ sources resolves to a `<depend>` entry in that package's `package.xml`. System libraries (Eigen, Boost, PCL, GTSAM, Sophus, OpenCV, yaml-cpp, fmt, glog, tbb, gtest, POSIX headers) are exempt because they're pulled via `find_package` + `target_link_libraries`, not `<depend>`. `backend/sloam/clipper_semantic_object/` is exempt entirely (vendored third-party `add_subdirectory()`, not a ROS package).
+- **P** — for every `Node(package='<managed>', parameters=[{...}])` call in a `*.launch.py`, every literal dict key is declared in the target package's source via `declare_parameter`, the `declare_or_get<T>` wrapper family, `get_param_or`, or `declare_parameter_if_not_declared`. Catches the classic ROS2 silent-ignore bug where a launch file passes a parameter the target node never calls `declare_parameter` on. `scan2shape_launch` additionally walks `frontend/scan2shape/script/` because it installs scripts from that sibling directory.
+- **Q** — every `*.sh` / `*.bash` under `backend/`, `frontend/`, `tools/`, and `tests/` passes `bash -n` (parse-only syntax check). Skipped cleanly when `bash` is not on `PATH`.
 
 Run it with:
 
@@ -452,7 +455,7 @@ bash tests/static/check_ros2_port.sh            # summary only
 bash tests/static/check_ros2_port.sh --verbose  # dump hit details on failures
 ```
 
-Exits 0 if all 51 pass, non-zero otherwise. Exempted from every section: `backend/sloam/clipper_semantic_object/` (vendored third-party CMake library) and `frontend/scan2shape/rviz/`.
+Exits 0 if all 54 pass, non-zero otherwise. Exempted from every section: `backend/sloam/clipper_semantic_object/` (vendored third-party CMake library) and `frontend/scan2shape/rviz/`.
 
 ## pytest mirror (`tests/python/`)
 
