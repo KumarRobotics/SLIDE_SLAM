@@ -15,8 +15,11 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     sloam_share = get_package_share_directory('sloam')
-    sloam_yaml = PathJoinSubstitution([sloam_share, 'params', 'sloam_sim.yaml'])
-    sim_yaml = PathJoinSubstitution([sloam_share, 'params', 'sim.yaml'])
+    # Upstream ROS1 referenced 'params/sloam_sim.yaml' + 'params/sim.yaml';
+    # neither file was ever shipped in sloam/params/ on master. The only
+    # parameter yaml that actually exists is 'params/sloam.yaml', which we
+    # use as a single merged source until someone re-adds the split files.
+    sloam_yaml = PathJoinSubstitution([sloam_share, 'params', 'sloam.yaml'])
     rviz_config = PathJoinSubstitution(
         [sloam_share, 'launch', 'rviz', 'decentralized_sloam.rviz']
     )
@@ -30,7 +33,7 @@ def generate_launch_description():
             executable='sloam_node',
             name='segmentation',
             output='screen',
-            parameters=[sloam_yaml, sim_yaml],
+            parameters=[sloam_yaml],
         ),
         Node(
             package='rviz2',

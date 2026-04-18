@@ -15,13 +15,13 @@ tests/
 ```
 
 The static layer is the authoritative regression gate and currently enforces
-**51 checks across 14 sections (A–N)**. The Python layer mirrors the same
+**55 checks across 18 sections (A–R)**. The Python layer mirrors the same
 checks for CI ergonomics. The integration layer ships one runnable smoke test
 (`launch_smoke_test.sh`) and a README describing the larger runtime tests a
 future contributor should add.
 
 **Current state:** `bash tests/static/check_ros2_port.sh` reports
-`51 checks, 51 passed, 0 failed, 0 skipped`.
+`55 checks, 55 passed, 0 failed, 0 skipped`.
 
 ## Layer 1 — Static (`tests/static/`)
 

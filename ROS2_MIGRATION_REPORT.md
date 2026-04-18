@@ -19,7 +19,7 @@ It is intended for anyone who:
 - **Source branch:** [`ros2_dev`](https://github.com/KumarRobotics/SLIDE_SLAM/tree/ros2_dev)
 - **Base branch:** [`master`](https://github.com/KumarRobotics/SLIDE_SLAM/tree/master) (ROS1 Noetic, Ubuntu 20.04)
 - **Target platform:** ROS2 Jazzy Jalisco on Ubuntu 24.04
-- **Static test suite state:** `51 checks, 51 passed, 0 failed, 0 skipped`
+- **Static test suite state:** `55 checks, 55 passed, 0 failed, 0 skipped`
   (see [§5](#5-what-the-static-suite-enforces))
 
 ---

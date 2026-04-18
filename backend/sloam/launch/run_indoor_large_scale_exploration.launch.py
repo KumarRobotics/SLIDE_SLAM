@@ -15,9 +15,11 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     sloam_share = get_package_share_directory('sloam')
-    sloam_yaml = PathJoinSubstitution(
-        [sloam_share, 'params', 'sloam_active_slam_real_robot.yaml']
-    )
+    # Upstream ROS1 referenced 'params/sloam_active_slam_real_robot.yaml';
+    # that file was never shipped in sloam/params/ on master. The only
+    # parameter yaml that actually exists is 'params/sloam.yaml', which we
+    # use here until someone re-adds a dedicated active-slam config.
+    sloam_yaml = PathJoinSubstitution([sloam_share, 'params', 'sloam.yaml'])
     rviz_config = PathJoinSubstitution(
         [sloam_share, 'launch', 'rviz', 'sloam_active_slam.rviz']
     )

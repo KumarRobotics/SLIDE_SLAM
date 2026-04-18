@@ -1,7 +1,7 @@
 # `tests/static/` — bash static-check runner
 
-A single-file bash script that runs seventeen classes of static checks
-(sections A-Q) against the SlideSLAM `ros2_dev` branch. Zero Python, zero
+A single-file bash script that runs eighteen classes of static checks
+(sections A-R) against the SlideSLAM `ros2_dev` branch. Zero Python, zero
 ROS dependencies; only `bash`, `find`, `awk`, and either `ripgrep`
 (preferred) or `grep -r` (fallback).
 
@@ -42,6 +42,7 @@ The runner:
 | **O**   | Every `#include <pkg/...>` in a managed package's C/C++ sources resolves to an entry in that package's `package.xml`. Owning-package is resolved by walking up the directory tree. System libs (`Eigen`, `boost`, `pcl`, `gtsam`, `sophus`, `opencv2`, `yaml-cpp`, `fmt`, `glog`, `tbb`, `gtest`, `benchmark`, POSIX headers) are exempt because they're pulled via `find_package` + `target_link_libraries`, not `<depend>`. `backend/sloam/clipper_semantic_object/` is exempt entirely (vendored third-party `add_subdirectory()`, not a ROS package). |
 | **P**   | For every `Node(package='<managed>', executable='<y>', parameters=[{'k': v, ...}])` in a `*.launch.py`, every literal dict key `k` is declared in the target package's source as `declare_parameter("k", ...)` (template or plain form), the `declare_or_get<T>(node, "k", ...)` wrapper, `get_param_or(node, "k", ...)`, or `declare_parameter_if_not_declared(node, "k", ...)`. Catches the classic ROS2 bug where a launch file passes a parameter that the target node silently ignores because it never calls `declare_parameter`. Only dict-literal `parameters=[{...}]` is analyzed; yaml-file-path parameters, `ComposableNode`s, and dynamically-built `params` variables are skipped. `scan2shape_launch` additionally walks `frontend/scan2shape/script/` because it installs scripts from that sibling directory. |
 | **Q**   | Every `*.sh` / `*.bash` under `backend/`, `frontend/`, `tools/`, and `tests/` passes `bash -n`. Skipped (with a clear reason) when `bash -n` isn't usable in the runtime sandbox. |
+| **R**   | For every `PathJoinSubstitution([FindPackageShare('<managed>'), 'seg', ...])` in a `*.launch.py`, the resolved path exists in `<managed>`'s source tree. Catches launch files whose config / rviz / sub-launch path references went stale during the port (a renamed yaml that still has the old name in a launch file, for instance). External packages are skipped; directory-only targets (no file extension) are skipped; `msckf_calib.yaml` is carved out because it's generated at first run by the upstream workflow. |
 
 ## Carve-outs
 
