@@ -1,4 +1,13 @@
 #!/bin/bash
+#
+# ⚠️  ROS1 LEGACY — NOT PORTED ⚠️
+#
+# This tmux script uses ROS1 CLI commands (roscore, rosparam, rosbag play,
+# roslaunch, rosrun, roscd). It will NOT work in a ROS2 Jazzy environment
+# as-is. See tmux_no_docker.sh in the same directory for a rough ROS1 ->
+# ROS2 CLI cheat sheet. Also: /home/sam/bags/... is a hardcoded path that
+# must be updated for your system before running.
+#
 
 SESSION_NAME=tmux_pipeline
 
